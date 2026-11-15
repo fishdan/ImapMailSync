@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-15
 
-**Status**: Draft
+**Status**: Ready for planning
 
 **Input**: Label every message copied into alpha after this feature is enabled with the source email address minus its final `.ext` suffix. For example, mail copied from `person@yahoo.com` receives the Gmail label `person@yahoo`.
 
@@ -32,7 +32,7 @@ As the operator, I want a destination copy to be labeled even if the service sto
 
 **Acceptance Scenarios**:
 
-1. **Given** alpha accepted a copy but label application failed or its acknowledgement was lost, **when** the service resumes, **then** it finds that exact copy and adds or confirms the source label without APPENDing a duplicate.
+1. **Given** alpha accepted a copy but label application failed or its acknowledgement was lost, **when** the service resumes even after 24 hours, **then** it finds that exact copy and adds or confirms the source label without APPENDing a duplicate.
 2. **Given** label creation or application is temporarily unavailable, **when** the cycle ends, **then** the account reports an incomplete label operation with the affected source UID; it does not report the message as fully synchronized.
 3. **Given** a labeled copy is encountered on a repeat cycle, **when** its state is checked, **then** no extra copy or duplicate label is created and any other labels remain intact.
 
@@ -59,6 +59,7 @@ As the operator, I want each configured source address to produce its own label 
 - A destination label may already exist, or the destination may reject creating or applying it. These conditions must not remove the copy, remove another label, or change read state.
 - A copy may be accepted just before an outage. The service must distinguish a pending label from an unsent message and must not create a second copy during recovery.
 - A pending label may remain unresolved when the source copy's 24-hour eligibility window closes. Recovery must not backfill an untransferred source message.
+- If a pending destination copy has been deleted, the service reports that it cannot finish labeling that copy; it does not recreate mail the operator removed from alpha.
 
 ## Requirements
 
@@ -73,7 +74,7 @@ As the operator, I want each configured source address to produce its own label 
 - **FR-007**: The service MUST validate that a source address can yield an unambiguous label before copying new mail from that source. A source-specific failure MUST NOT stop other sources.
 - **FR-008**: If alpha is known not to support user labels before a copy begins, the service MUST skip new copies and report the capability failure. A label failure discovered after a copy was accepted MUST leave that copy pending and MUST NOT be treated as complete.
 - **FR-009**: Source credentials and message content MUST NOT be disclosed in label-operation output or logs. The derived label is destination metadata, not a new message header or a modification to the source message.
-- **FR-010**: Recovery of an already accepted destination copy MAY inspect that exact recorded copy after 24 hours if needed to finish its label, but MUST NOT scan or import unrelated old mail in either account. This is a proposed exception to feature 0.001's alpha inspection window, pending operator confirmation.
+- **FR-010**: Recovery of an already accepted destination copy MUST retry its missing label until the label is confirmed or the copy is verified absent from alpha, even after 24 hours. A temporary connection failure MUST leave the label pending. Recovery MAY inspect only that specific recorded copy by its destination UID or stable marker; it MUST NOT broadly scan or import unrelated old mail in either account. This operator-approved exception to feature 0.001's alpha inspection window does not extend the 24-hour source-copy cutoff.
 
 ### Key Entities
 
@@ -87,7 +88,7 @@ As the operator, I want each configured source address to produce its own label 
 
 - **SC-001**: In a controlled run of 100 eligible messages from one source, 100 destination copies remain in alpha's Inbox and each has exactly the expected source label; no source message is deleted or marked read by the sync.
 - **SC-002**: In a controlled run with at least two source addresses, every copied message is associated with the label derived from its own source and no unrelated destination message receives one.
-- **SC-003**: In interruption and lost-acknowledgement tests at both the copy and label steps, each source occurrence produces at most one destination copy and reaches a confirmed labeled state or a visible pending/error state.
+- **SC-003**: In interruption and lost-acknowledgement tests at both the copy and label steps, including a label retry after 24 hours, each source occurrence produces at most one destination copy and reaches a confirmed labeled state or a visible pending/error state.
 - **SC-004**: On three repeat cycles after successful labeling, destination copy counts and existing non-source labels remain unchanged.
 - **SC-005**: For any failed label operation, the cycle reports the affected account and source UID without a credential value, message body, or attachment content.
 
@@ -98,4 +99,4 @@ As the operator, I want each configured source address to produce its own label 
 - The configured source `username` is the source email address used to derive the label. A separate address field for providers with non-email login names is outside this draft's scope.
 - The `.ext` rule is literal: remove only the final dot segment, retain the rest of the address, and preserve its configured letter case. Multi-part suffix handling can be revised before implementation if the operator prefers a different display name.
 - Alpha is the configured Gmail destination. Google's [Gmail IMAP extensions](https://developers.google.com/workspace/gmail/imap/imap-extensions) document adding labels to an existing message and creating labels through IMAP; protocol selection and fault tests belong in the later implementation plan.
-- The exact policy for retrying a pending label after the destination copy becomes older than 24 hours is awaiting operator confirmation. FR-010 states the proposed recovery behavior so the remaining decision is visible.
+- The operator approved targeted label repair after 24 hours for a copy already accepted in alpha. The source-copy cutoff still applies on every production run, and repair must not scan unrelated historical mail.

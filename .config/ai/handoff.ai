@@ -2,10 +2,10 @@
 
 ## 2026-11-15 — Source address label specification in progress
 
-- Branch: `feat/0.002-source-address-labels`, created from merged `main`. Active feature: `specs/0/0.002-source-address-labels/spec.md`, draft specification only. No implementation, production label operation, or existing sync change was made.
+- Branch: `feat/0.002-source-address-labels`, created from merged `main`. Active feature: `specs/0/0.002-source-address-labels/spec.md`, ready for planning. No implementation, production label operation, or existing sync change was made.
 - The draft maps a configured source address such as `person@yahoo.com` to the alpha Gmail label `person@yahoo`, preserving Inbox placement and source mail. It covers new copies only, label reuse/creation, interruption recovery, idempotence, and reporting. The public spec uses a generic example because the operator's example matches a private username.
-- Pending operator decision: may the service retry labeling a specific already accepted alpha copy after 24 hours? The draft recommends yes, without scanning unrelated older mail. The checklist keeps this open until answered.
-- Next action: resolve that decision, review the draft spec, then create the feature plan and implementation tasks. No plan or tasks for feature 0.002 have been created yet.
+- Operator decision resolved: retry the label on a specific already accepted alpha copy after 24 hours until labeled or inaccessible, without scanning unrelated older mail or extending the 24-hour source-copy cutoff. The checklist marks this confirmed.
+- Next action: create the feature plan and implementation tasks, including disposable Gmail-compatible label and interruption tests. No plan or tasks for feature 0.002 have been created yet.
 
 ## 2026-11-15 — Yahoo production sync active
 

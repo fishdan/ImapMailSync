@@ -17,8 +17,8 @@
 - [x] User stories have independent tests and measurable success criteria.
 - [x] The final-dot suffix rule is explicit, including a multi-part suffix example.
 - [x] Label creation, reuse, confirmation, retry, and source isolation are covered.
-- [ ] Confirm whether a known destination copy may receive its pending label after the 24-hour alpha inspection window. The draft recommends targeted repair without broad historical searches.
+- [x] The operator approved retrying the label on a specific already accepted copy after 24 hours, without broad historical searches or source backfill.
 
 ## Next SpecKit Step
 
-Resolve the pending recovery decision, then prepare a plan and tasks with a disposable Gmail-compatible label protocol test before any production label writes.
+Prepare a plan and tasks with a disposable Gmail-compatible label protocol test before any production label writes.
