@@ -1,5 +1,12 @@
 # Progress Log
 
+## 2026-11-15 — Source address labels plan and tasks
+
+- Completed the planning phase for feature `0.002-source-address-labels` on `feat/0.002-source-address-labels`. Added `plan.md`, `research.md`, `data-model.md`, `contracts/cli.md`, `quickstart.md`, and `tasks.md` with 17 ordered tasks. The spec now records `Planned; implementation pending`.
+- Chose Gmail's existing IMAP `X-GM-EXT-1` path: label discovery/creation through LIST/CREATE, additive `UID STORE +X-GM-LABELS`, and exact-UID FETCH confirmation. The plan gates new APPENDs on label capability and address validation. It does not add a production dependency or change live mail.
+- Designed migration 002 as an empty-on-upgrade label-job table, leaving pre-feature copies and existing UIDNEXT baselines untouched. New jobs are committed before post-feature APPEND. A pending accepted copy can be repaired after 24 hours by saved destination UID or exact marker; an old source message with no accepted copy is never APPENDed. The test plan covers lost APPEND/STORE acknowledgements, source outage, deleted copy, multiple marker matches, 100-message throughput, multi-source isolation, and sanitized reports.
+- Validation for this documentation phase: `git diff --check` passed; SpecKit version 1.4.1.dev0 and feature branch confirmed; private account JSON and SQLite state remain Git-ignored. No application tests or production label writes were run because implementation has not started. The monthly dependency review from 2026-11-15 remains current.
+
 ## 2026-11-15 — Source address labels specification
 
 - The operator approved retrying a missing label on the specific copy already accepted in alpha even after 24 hours. Updated FR-010 from a proposed exception to a requirement: target that recorded copy until labeled or inaccessible, never broaden historical scans or reimport old source mail. The source-copy cutoff remains 24 hours on every run. Updated the interrupted-copy acceptance test, edge cases, success criterion, and checklist; the spec is ready for planning. No application code or live mailbox state changed.
