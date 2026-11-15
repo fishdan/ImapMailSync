@@ -8,3 +8,10 @@
 - Findings: no auditable project dependencies; no CVEs identified.
 - Fixes: none required.
 - Validation: `specify --version` returned `specify 1.4.1.dev0`; no dependency audit command was applicable.
+
+## 2026-11-15 — Initial public repository
+
+- Created public GitHub repository `fishdan/mailsync`.
+- Initialized local Git on `main` and uploaded the existing 38 bootstrap/SpecKit files.
+- Initial commit: `3e69a17` (`chore: bootstrap mailsync project`).
+- Repository URL: https://github.com/fishdan/mailsync
