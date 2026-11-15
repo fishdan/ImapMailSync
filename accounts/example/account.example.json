@@ -1,0 +1,11 @@
+{
+  "provider": "Example IMAP provider",
+  "username": "your-address@example.com",
+  "password": "YOUR_APP_PASSWORD",
+  "imap": {
+    "host": "imap.example.com",
+    "port": 993,
+    "security": "SSL/TLS",
+    "authenticationRequired": true
+  }
+}

@@ -1,0 +1,12 @@
+[Unit]
+Description=Copy new source Inbox mail to alpha
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/IdeaProjects/ImapMailSync
+Environment=PYTHONPATH=src
+ExecStart=/usr/bin/python3 -m mailsync run-once --json
+UMask=0077
+NoNewPrivileges=true
