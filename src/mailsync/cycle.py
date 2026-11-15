@@ -1,0 +1,204 @@
+"""One nonoverlapping sync cycle with durable per-source recovery."""
+
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+import fcntl
+import imaplib
+import os
+from pathlib import Path
+import sqlite3
+import ssl
+import time
+
+from .baseline import eligible_uids, marker_for, within_24_hours
+from .config import Account, discover_accounts
+from .imap_client import IMAPError, IMAPSession
+from .state import StateError, Store, utc_now
+
+
+class CycleError(Exception):
+    """A sanitized global cycle failure."""
+
+
+@contextmanager
+def process_lock(root: Path):
+    directory = root / ".state"
+    if directory.is_symlink():
+        raise CycleError("UNSAFE_STATE_PATH")
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory.chmod(0o700)
+    lock_path = directory / "run.lock"
+    if lock_path.is_symlink():
+        raise CycleError("UNSAFE_LOCK_PATH")
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        os.fchmod(descriptor, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise CycleError("RUN_ALREADY_ACTIVE") from exc
+        yield
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
+def _result(account_id: str, status: str, copied: int = 0, skipped: int = 0,
+            failed: int = 0, error_code: str | None = None,
+            issue_uids: set[int] | None = None) -> dict:
+    result = {"account_id": account_id, "status": status, "copied": copied,
+              "skipped": skipped, "failed": failed}
+    if error_code:
+        result["error_code"] = error_code
+    if issue_uids:
+        result["issue_uids"] = sorted(issue_uids)
+    return result
+
+
+def _matches(destination: IMAPSession, marker: str, *, after_append: bool = False) -> list[int]:
+    for attempt in range(3 if after_append else 1):
+        matches = destination.find_marker(marker, datetime.now(timezone.utc) - timedelta(hours=24))
+        if matches or not after_append or attempt == 2:
+            return matches
+        time.sleep(1)
+    return []
+
+
+def _sync_source(store: Store, source_account: Account, destination_account: Account,
+                 destination: IMAPSession) -> dict:
+    account_id = source_account.account_id
+    baseline = store.baseline(account_id)
+    if baseline is None:
+        return _result(account_id, "failed", failed=1, error_code="SOURCE_UNINITIALIZED")
+    if baseline["status"] != "active":
+        return _result(account_id, "blocked", failed=1, error_code="SOURCE_BLOCKED")
+    if (baseline["account_identity"] != source_account.identity
+            or baseline["destination_identity"] != destination_account.identity):
+        store.block_source(account_id)
+        return _result(account_id, "blocked", failed=1, error_code="ACCOUNT_IDENTITY_CHANGED")
+    copied = skipped = failed = 0
+    error_code = None
+    expired_now = store.expire_old_attempts(account_id, baseline["uidvalidity"],
+                                            datetime.now(timezone.utc) - timedelta(hours=24))
+    issue_uids = set(expired_now)
+    expired = store.expired_uids(account_id, baseline["uidvalidity"])
+    if expired_now:
+        error_code = "AGE_WINDOW_EXPIRED"
+    try:
+        with IMAPSession(source_account) as source:
+            if source.uidvalidity != baseline["uidvalidity"]:
+                store.block_source(account_id)
+                return _result(account_id, "blocked", failed=1, error_code="SOURCE_UIDVALIDITY_CHANGED")
+            candidate_uids = source.uids_since(datetime.now(timezone.utc) - timedelta(hours=24))
+            confirmed = store.confirmed_uids(account_id, source.uidvalidity)
+            selected = eligible_uids(candidate_uids, baseline["first_eligible_uid"], confirmed | expired)
+            skipped = sum(uid >= baseline["first_eligible_uid"] for uid in candidate_uids) - len(selected)
+            skipped += len(expired_now - set(candidate_uids))
+            for uid in selected:
+                marker = marker_for(account_id, source_account.identity, source.uidvalidity, uid)
+                try:
+                    store.begin_attempt(account_id, source.uidvalidity, uid, marker)
+                    item = source.fetch(uid)
+                    if not within_24_hours(item.internaldate, datetime.now(timezone.utc)):
+                        code = ("FUTURE_INTERNALDATE" if item.internaldate > datetime.now(timezone.utc)
+                                else "AGE_WINDOW_EXPIRED")
+                        store.mark_failed(account_id, source.uidvalidity, uid, code)
+                        issue_uids.add(uid)
+                        skipped += 1
+                        error_code = code
+                        continue
+                    matches = _matches(destination, marker)
+                    if len(matches) > 1:
+                        store.mark_uncertain(account_id, source.uidvalidity, uid, "MULTIPLE_MARKER_MATCHES")
+                        store.block_source(account_id)
+                        issue_uids.add(uid)
+                        return _result(account_id, "blocked", copied, skipped, failed + 1,
+                                       "MULTIPLE_MARKER_MATCHES", issue_uids)
+                    if not matches:
+                        if not within_24_hours(item.internaldate, datetime.now(timezone.utc)):
+                            store.mark_failed(account_id, source.uidvalidity, uid, "AGE_WINDOW_EXPIRED")
+                            issue_uids.add(uid)
+                            skipped += 1
+                            error_code = "AGE_WINDOW_EXPIRED"
+                            continue
+                        destination.append_copy(item.raw, item.seen, item.internaldate, marker)
+                        matches = _matches(destination, marker, after_append=True)
+                    if len(matches) > 1:
+                        store.mark_uncertain(account_id, source.uidvalidity, uid, "MULTIPLE_MARKER_MATCHES")
+                        store.block_source(account_id)
+                        issue_uids.add(uid)
+                        return _result(account_id, "blocked", copied, skipped, failed + 1,
+                                       "MULTIPLE_MARKER_MATCHES", issue_uids)
+                    if len(matches) != 1:
+                        store.mark_uncertain(account_id, source.uidvalidity, uid, "DESTINATION_UNCONFIRMED")
+                        issue_uids.add(uid)
+                        failed += 1
+                        error_code = "DESTINATION_UNCONFIRMED"
+                        break
+                    store.confirm(account_id, source.uidvalidity, uid, marker,
+                                  destination.uidvalidity, matches[0])
+                    copied += 1
+                except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError):
+                    store.mark_uncertain(account_id, source.uidvalidity, uid, "TRANSFER_UNCERTAIN")
+                    issue_uids.add(uid)
+                    failed += 1
+                    error_code = "TRANSFER_UNCERTAIN"
+                    break
+                except StateError:
+                    store.block_source(account_id)
+                    issue_uids.add(uid)
+                    return _result(account_id, "blocked", copied, skipped, failed + 1,
+                                   "STATE_INCONSISTENT", issue_uids)
+    except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError):
+        failed += 1
+        error_code = "SOURCE_UNAVAILABLE"
+    return _result(account_id, "failed" if failed else "success", copied, skipped, failed,
+                   error_code, issue_uids)
+
+
+def run_once(root: Path) -> tuple[dict, int]:
+    """Run all sources; return a sanitized cycle report and CLI exit code."""
+    started = utc_now()
+    accounts, errors = discover_accounts(root)
+    if "alpha" not in accounts:
+        return ({"cycle_started_at": started, "cycle_ended_at": utc_now(),
+                 "overall_status": "failed", "accounts": [_result("alpha", "failed", failed=1,
+                 error_code=errors.get("alpha", "MISSING_CONFIG"))]}, 2)
+    if len(accounts) == 1 and not any(account_id != "alpha" for account_id in errors):
+        return ({"cycle_started_at": started, "cycle_ended_at": utc_now(),
+                 "overall_status": "failed", "accounts": [], "error_code": "NO_SOURCE_ACCOUNTS"}, 2)
+    try:
+        with process_lock(root), Store(root) as store:
+            cycle_id = store.start_cycle()
+            results = []
+            try:
+                with IMAPSession(accounts["alpha"]) as destination:
+                    for account_id, code in sorted(errors.items()):
+                        if account_id != "alpha":
+                            results.append(_result(account_id, "failed", failed=1, error_code=code))
+                    for account_id, account in sorted(accounts.items()):
+                        if account_id == "alpha":
+                            continue
+                        results.append(_sync_source(store, account, accounts["alpha"], destination))
+            except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError):
+                for account_id in sorted(set(accounts) - {"alpha"}):
+                    if not any(item["account_id"] == account_id for item in results):
+                        results.append(_result(account_id, "failed", failed=1,
+                                               error_code="DESTINATION_UNAVAILABLE"))
+            for result in results:
+                store.record_account(cycle_id, result["account_id"], result["status"],
+                                     result["copied"], result["skipped"], result["failed"],
+                                     result.get("error_code"))
+            status = "success" if all(item["status"] == "success" for item in results) else "partial"
+            if results and all(item["status"] != "success" for item in results):
+                status = "failed"
+            store.finish_cycle(cycle_id, status)
+            ended = utc_now()
+            return ({"cycle_started_at": started, "cycle_ended_at": ended,
+                     "overall_status": status, "accounts": results},
+                    3 if any(item["status"] == "blocked" for item in results) else 1 if status != "success" else 0)
+    except (CycleError, StateError, sqlite3.DatabaseError) as exc:
+        return ({"cycle_started_at": started, "cycle_ended_at": utc_now(),
+                 "overall_status": "failed", "accounts": [], "error_code": str(exc)}, 2)

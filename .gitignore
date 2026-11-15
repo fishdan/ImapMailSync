@@ -1,0 +1,17 @@
+# Account credentials are local and must never be committed.
+accounts/**/.secrets/
+
+# Runtime state and transfer caches contain mailbox metadata.
+.state/
+
+# Disposable provider probe output.
+experiments/imapsync/.local/
+experiments/direct_imap/.local/
+experiments/imapsync/*.log
+
+# Python-generated local files.
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/

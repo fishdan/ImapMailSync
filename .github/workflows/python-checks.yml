@@ -1,0 +1,26 @@
+name: Python checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Application tests
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+      - name: Imapsync probe tests
+        run: python -m unittest discover -s experiments/imapsync -p 'test_*.py' -v
+      - name: Compile Python sources
+        run: python -m compileall -q src tests

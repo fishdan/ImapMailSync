@@ -1,0 +1,11 @@
+[Unit]
+Description=Check source Inboxes every five minutes
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+AccuracySec=30s
+Unit=mailsync.service
+
+[Install]
+WantedBy=timers.target

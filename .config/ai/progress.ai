@@ -1,5 +1,101 @@
 # Progress Log
 
+## 2026-11-15 — PR readiness review and README update
+
+- Added T033 for a PR-readiness review and moved the proposed changes from `main` onto `feat/imap-mail-sync`. Updated `README.md` with fresh-clone private account setup, the one-time activation boundary, the correct `PYTHONPATH=src` test command, timer status, and the remaining live-delivery observation. Updated the quickstart test command for the same source layout.
+- Found that the advertised Python package could not find its root-level migration after installation. Moved `001_initial.sql` into `src/mailsync/migrations/`, updated the migration loader and package-data configuration, and aligned the plan, model, tasks, and README. An isolated wheel build contained the migration, and the installed wheel's CLI initialized SQLite schema version 1 successfully. The system's Python lacks `ensurepip`, so a fresh virtual environment could not be created locally; the wheel was instead built from a temporary copy and tested from an extracted installation.
+- Added a credential-free GitHub Actions workflow for application tests, imapsync probe tests, and Python compilation on pull requests and pushes to `main`. Local equivalents passed; the hosted workflow cannot be observed until a branch is pushed. The 2026-11-15 dependency review remains current; packaging uses the existing setuptools build requirement and adds no production runtime dependency.
+- Completed T033 review: 46 proposed files were staged and scanned, with zero private paths or live credential-value matches. The `PYTHONPATH=src` application suite passed 32 tests; the imapsync probe suite passed 9; `compileall`, systemd unit verification, workflow YAML structure check, and staged/working-tree whitespace checks passed. The live timer remained active and its latest observed cycle succeeded with zero copies and failures. The added PR workflow has not run on GitHub yet because the branch has not been pushed.
+- Closed an FR-011 reporting gap: per-run account results now include sorted `issue_uids` for skipped or failed source messages, with tests for an expired message and a lost APPEND acknowledgement. Updated the CLI contract and README; the `status` command is documented as showing baselines and the latest cycle, while the per-run JSON and service journal retain UID context.
+- Removed absolute live mailbox counts and exact production UID values from proposed PR history; the operational values remain available in the ignored SQLite state. The public evidence retains relative counts and validation outcomes.
+- Live SC-001 timing and live SC-002 copy/repeat observation still require a naturally arriving post-baseline Yahoo message. Those are acceptance evidence gaps; the completed local tests, active timer, and two observed production activations support PR review now.
+
+## 2026-11-15 — Yahoo production sync activated
+
+- Completed T023 and T032 under the operator's explicit authorization. `doctor --json` passed for alpha and yahoo. `init-source yahoo --json` recorded Yahoo's UIDNEXT baseline in ignored private state; pre-existing Yahoo Inbox messages are excluded. A manual `run-once --json` succeeded with zero copies and zero failures.
+- Installed and enabled `mailsync.timer` and `mailsync.service` as systemd user units. Enabled user lingering (`Linger=yes`) so the timer remains scheduled after logout. Observed scheduled runs at 17:10 and 17:15 Eastern; each service process exited successfully, reported zero failures and zero copies, and the next 17:20 run was queued. The process lock prevents overlapping manual cycles; systemd oneshot scheduling prevents concurrent timer invocations.
+- Read-only before/after mailbox counts and UIDNEXT values stayed stable in Yahoo and alpha during observation. No post-baseline Yahoo message arrived, so no production APPEND occurred in these runs; source preservation and absence of deletion were confirmed by stable counts and the implementation's read-only source selection, `BODY.PEEK[]`, and lack of delete/expunge operations. Live arrival-to-alpha timing remains unmeasured and SC-001/SC-002 remain partial until a natural post-baseline arrival is observed. The local 100-message batch and repeat passed.
+- Validation: 32 application tests, 9 probe tests, disposable smoke/fault/outage scenarios, 100-message throughput, `compileall`, systemd unit verification, `git diff --check`, Git ignore check for both account JSON files and state, and an 81-file credential-value scan all passed. The Python runtime adds no third-party dependency; the 2026-11-15 dependency review remains current. No live messages were deleted or altered.
+
+## 2026-11-15 — Permanent 24-hour policy and live activation authorized
+
+- The operator clarified that the 24-hour arrival cutoff applies to **every production run**, not only the earlier transfer test, and authorized establishing Yahoo's production baseline and enabling the five-minute user timer after the cutoff is implemented and validated.
+- Updated the feature spec, plan, data model, CLI contract, quickstart, README, checklist, and tasks to intersect the first-activation UIDNEXT baseline with an exact rolling 24-hour IMAP `INTERNALDATE` window. The message `Date` header is not used for eligibility. An unconfirmed message that ages out is skipped and is never APPENDed later; existing attempts record `AGE_WINDOW_EXPIRED`.
+- Completed T031. Source UID searches and alpha marker searches use a calendar `SINCE` lower bound one day before the UTC cutoff to account for IMAP timezone offsets, then exact `INTERNALDATE` checks enforce the rolling 24-hour window; source age is rechecked just before APPEND. Attempts that age out, including uncertain writes during an outage, are recorded as `AGE_WINDOW_EXPIRED` without an old-mail search or later copy. Validation: 32 application tests and 9 imapsync probe tests passed; disposable smoke copied four fresh messages and skipped a 25-hour-old fixture; lost-ack and two-source outage tests passed; 100-message batch copied in 22.36 seconds and repeated with zero copies. `compileall`, systemd verification, and `git diff --check` passed. T032 activation is next; no production baseline or timer was established in this entry.
+- Completed T029 final checks: `git check-ignore` confirmed both live account JSON paths and `.state/mailsync.sqlite3` are ignored; a scan of 81 candidate project files found zero occurrences of live username or password values. The Python app uses only standard-library runtime modules; the 2026-11-15 dependency/CVE review recorded earlier in this log remains current. No new external dependency was added for the 24-hour policy.
+
+## 2026-11-15 — Imapsync no-go and direct IMAP implementation
+
+- Completed T005–T007 adoption testing. The 28 live Yahoo-to-alpha copies matched byte-for-byte and preserved source flags. Disposable GreenMail fixtures passed baseline, attachment, equal/missing-`Message-ID`, destination flag, deletion-filter, invalid-certificate, and source-outage checks. A dropped APPEND acknowledgement left one destination copy without an imapsync UID cache mapping; a plain retry duplicated it. A unique marker reconciled that fault, but needed one imapsync process per message. Two live single-UID dry runs took 11.2 and 11.05 seconds each, projecting about 18 minutes for 100 serial messages. Recorded no-go in `research.md` and `experiments/imapsync/probe.md`; revised the plan, model, CLI contract, quickstart, and tasks for direct Python IMAP (T008).
+- Implemented T009–T022 and T024–T028: Python 3.12 CLI, private account validation, versioned SQLite migration, per-source UIDNEXT baseline, read-only UID enumeration and `BODY.PEEK[]`, certificate-verifying source/destination connections, INBOX-only APPEND with a stable `X-Mailsync-Key`, destination marker reconciliation before retry, durable confirmed-copy ledger, per-source failure isolation, cycle reports, process lock, five-minute systemd user timer files, example config, README, and recovery/backup guidance. The 24-hour window remains a one-off live-test limit; production uses the activation baseline.
+- Disposable direct IMAP smoke test over a temporary trusted TLS bridge: four new messages copied, old baseline message excluded, original raw message bytes retained after the added marker, attachment preserved, repeat copied zero, destination read flag retained, a deleted disposable destination copy stayed absent, and a later new source message copied once. Fault test dropped an accepted APPEND acknowledgement: first cycle marked the attempt uncertain, second cycle found the existing marker and confirmed one copy without another APPEND. Two-source outage test: healthy source copied while delta was unavailable; delta copied after recovery. A 100-message disposable batch copied in 18.10 seconds and repeated with zero duplicates. Real Yahoo and alpha `doctor --json` returned success without copying or changing mail.
+- Validation: 28 application unit tests and 9 imapsync probe tests passed; `compileall`, `systemd-analyze verify`, and `git diff --check` passed. `systemd-analyze calendar '*:0/5'` showed five-minute intervals. A scan of 81 candidate repository files found zero real account usernames or passwords; both private account JSON files and state/log paths are Git-ignored and owner-only. Production adds no runtime third-party package. Test-only GreenMail image was pinned to digest `sha256:309ba544ea482e5d4265d09921cdab07c8dad2cc4481d715c9b8ff5d3f0a149f`; no pending Ubuntu Python/OpenSSL package upgrade was listed.
+- Remaining: T023's two observed timer activations and live unattended sync have not been run. No production baseline was established and no timer was enabled against the real accounts. SC-001's live-provider 10-minute arrival target remains unmeasured; the 100-message local performance test only covers software overhead.
+
+## 2026-11-15 — 24-hour Yahoo-to-alpha transfer trial
+
+- User scope: copy only Yahoo Inbox messages with IMAP `INTERNALDATE` within the preceding 24 hours into alpha's Inbox; inspect only the same recent window in alpha; delete nothing. This is a one-off live test, not first-activation baseline or unattended sync.
+- Added `experiments/imapsync/transfer_recent.py` with exact UTC cutoff filtering on both accounts, explicit UID searches, Yahoo `Inbox` to Gmail `INBOX` mapping, TLS peer verification, memory-backed private passfile descriptors, `--useuid`, stable private cache, no flag resync, and no expunge or delete options. The first dry run exposed Yahoo's `Inbox` capitalization and selected zero folders; corrected before writing. The bounded dry run projected 28 copies.
+- Live run: 28 copied, 0 skipped, 0 errors, 0 source or destination deletions. Yahoo Inbox count and all 28 selected source flags, arrival dates, and sizes were unchanged. Alpha Inbox grew by 28; all 28 distinct cache destination UIDs existed in alpha. Immediate repeat: 0 copied, 28 skipped, 0 deletions. A later independent alpha arrival was not in the transfer cache.
+- Validation: `python3 -m unittest discover -s experiments/imapsync -p 'test_*.py' -v` passed 9 tests, including exact cutoff boundary checks; `git diff --check` passed; `git check-ignore -v` confirmed both credential files, private logs, and state are excluded. The private state and log directories are mode 700; private log files are mode 600.
+- Full T005–T007 adoption gate remains pending the planned content, duplicate-header, destination-deletion, certificate-failure, interrupted-APPEND, and outage tests. No production sync service was started.
+
+## 2026-11-15 — Alpha authenticated read-only inspection
+
+- Rechecked alpha's private JSON after the operator saved it; credentials are filled. Connected to Gmail with certificate-verifying TLS, authenticated, selected `INBOX` read-only, and confirmed accessible UID metadata.
+- No baseline was established and no message was read, copied, or changed. Yahoo and alpha authentication both pass; the imapsync transfer and fault tests remain pending.
+- Validation: `python3 experiments/imapsync/probe.py alpha --config accounts/alpha/.secrets/account.json` exited 0 in under three seconds.
+
+## 2026-11-15 — Alpha Gmail private account template
+
+- Created `accounts/alpha/.secrets/account.json` with placeholder Gmail credentials and Google-documented IMAP `imap.gmail.com:993` and SMTP `smtp.gmail.com:465` settings. SMTP is retained for consistency with the Yahoo template but is unused by this feature.
+- Kept the file within the Git-ignored `.secrets` directory with owner-only permissions. Live Gmail authentication remains pending the operator's credentials.
+
+## 2026-11-15 — Yahoo authenticated read-only inspection
+
+- Rechecked private Yahoo JSON after the operator saved it; username and password are filled. Connected with certificate-verifying TLS, authenticated, selected `INBOX` read-only, and confirmed accessible UID metadata. No sync baseline was established and no messages were copied or changed.
+- Initial probe was stopped after more than one minute because it fetched flags one message at a time across a large Inbox. Updated `experiments/imapsync/probe.py` to skip flag fetch by default and fetch only eligible-message flags when requested.
+- Validation: updated probe completed in under three seconds with an exit code of 0; seven offline probe tests passed. Gmail destination and full imapsync transfer checks remain pending.
+
+## 2026-11-15 — Yahoo read-only connectivity check
+
+- Validated `accounts/yahoo/.secrets/account.json` as JSON without printing credential values. The file remains mode 600 in a mode 700 directory and is Git-ignored.
+- The username and password fields still contain template placeholders, so authenticated mailbox inspection was not attempted and no sync baseline was established.
+- Connected to the configured Yahoo IMAP endpoint on port 993 with Python's default certificate-verifying TLS context and received a successful IMAP CAPABILITY response. No message was read, copied, or changed.
+- Validation command: a short `python3 -c` read-only IMAP4_SSL CAPABILITY check; exit 0 with TLS and CAPABILITY both reported as successful.
+
+## 2026-11-15 — Yahoo account name and private JSON template
+
+- Renamed the planned source account ID and local directory from `beta` to `yahoo` throughout the spec, plan, tasks, probe guide, and quickstart.
+- Created `accounts/yahoo/.secrets/account.json` with the user-provided Yahoo IMAP and SMTP JSON template. It is mode 600 inside a mode 700 directory and is excluded by `.gitignore`, so filling its password will not add it to Git.
+- Updated the planned account configuration contract to read private account JSON. SMTP fields remain in the template but are outside the IMAP-copy behavior. The probe helper now accepts `--config` for private JSON and rejects placeholder credentials.
+- Validation: JSON parsed; `git check-ignore -v accounts/yahoo/.secrets/account.json` confirmed exclusion; seven offline probe tests passed. Live provider testing remains pending completed Yahoo and Gmail account credentials.
+
+## 2026-11-15 — Imapsync adoption gate preparation
+
+- Completed T001: added root `.gitignore` rules for account `.secrets`, `.state`, and local probe output; verified with `git check-ignore -v` on representative paths.
+- Completed T002: pinned public imapsync tag `imapsync-2.314` at commit `93654c6025ff7814f983ab74dd300f9bed9282d9` in ignored local storage; installed its missing Ubuntu Perl runtime modules; `./imapsync --version` returned `2.314` and `perl -c imapsync` returned `syntax OK`.
+- Dependency review: NVD CVE-2023-34204 applies through imapsync 2.229, not pinned 2.314; newly installed Ubuntu packages had no pending upgrades. Details and installed versions are in `experiments/imapsync/probe.md`.
+- Security finding: upstream `imapsync --tests` prints environment variables and later connects to external test servers. A second run with a scrubbed environment was stopped at the network-test phase. Do not run that command with secrets in the environment.
+- Security finding: pinned imapsync 2.314 defaults to `SSL_VERIFY_NONE`. The plan and probe now require forced TLS and explicit certificate verification for both hosts, with invalid-certificate rejection in the gate.
+- Completed T004: added a read-only IMAP probe and six offline tests for baseline UID filtering, exact UID batches, confirmed-copy filtering, and passfile permissions. `python3 -m unittest discover -s experiments/imapsync -p 'test_*.py' -v` passed (6 tests).
+- T003 and T005–T007 remain pending disposable Yahoo and Gmail account credentials and live test fixtures. No live mail was copied.
+
+## 2026-11-15 — Imapsync evaluation plan and implementation tasks
+
+- Added `plan.md`, `research.md`, `data-model.md`, `contracts/cli.md`, `quickstart.md`, and `tasks.md` under `specs/0/0.001-imap-mail-sync/`.
+- Selected imapsync as a conditional transfer-engine candidate, with a blocking disposable Yahoo-to-Gmail proof of concept before production transfer implementation. The gate covers first-activation baselines, duplicate identity, repeat runs, destination deletion behavior, flag stability, attachments, uncertain APPEND recovery, and source outage isolation.
+- Planned a Python 3.12 CLI wrapper, versioned SQLite state, per-source imapsync caches, and a five-minute systemd user timer if the candidate passes. A no-go result requires revising the plan and tasks for direct IMAP transfer.
+- Recorded the RFC 9051 UID-range edge case: a bare `UID n:*` can include an old last message when `n` exceeds all assigned UIDs, so the wrapper must enumerate and filter explicit eligible UIDs.
+- Validation: reviewed task ordering and spec coverage; no live mail was copied because disposable provider credentials are not available in the repository. No application code or dependencies were added in this planning step.
+
+## 2026-11-15 — One-way IMAP mail sync specification
+
+- Created `specs/0/0.001-imap-mail-sync/spec.md` and its quality checklist from the repository's resolved SpecKit template.
+- Defined a one-way, five-minute sync from multiple source Inboxes to alpha's Inbox, with durable duplicate prevention, safe retry, independent account failures, local per-account configuration, Git-ignored secrets, and operational reporting.
+- Recorded initial scope assumptions: new mail only, no historical backfill, no reverse sync, and no propagation of later edits or deletions.
+- Validation: reviewed all checklist items against the spec; no clarification markers or template placeholders remain. No application code or dependency changes were made, so no test suite applies to this documentation-only task.
+
 ## 2026-11-15 — Session bootstrap security audit
 
 - Scope: monthly vulnerability-audit check required by `start.ai`.
