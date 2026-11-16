@@ -1,5 +1,12 @@
 # Progress Log
 
+## 2026-11-15 — Source label production rollout, live arrival pending
+
+- Under operator approval, stopped the five-minute user timer and confirmed the service was inactive. Took a fresh private mode-600 SQLite backup through the SQLite backup API. Fast-forwarded the active `feat/0.002-source-address-labels` checkout to validated implementation commit `dae2506` while the timer was stopped.
+- `status --json` applied migration 002 to live private state: schema advanced from 1 to 2; all pre-upgrade source baseline and copy-record rows matched the fresh backup exactly; migration created zero label jobs for legacy copies; integrity check passed. `doctor --json` succeeded for alpha and Yahoo. An immediate controlled `run-once --json` succeeded with zero new copies, zero labels, zero pending jobs, and zero failures.
+- Restarted the enabled timer. Its 23:00 Eastern scheduled service run exited successfully with zero copies and zero failures; `status` showed no pending or missing label jobs, and the next five-minute run was queued. No new post-feature source mail arrived during observation, so no live label write or arrival-to-alpha timing was measured. T017 remains open for a natural future arrival; the timer is active and needs no further activation.
+- Git worktree is clean after the code switch. The branch has not been pushed or submitted as a PR. The 68-test disposable suite, 9 probe tests, packaged migration check, targeted safety tests, and private-value scans remain the pre-rollout validation evidence.
+
 ## 2026-11-15 — T017 production preflight, rollout pending
 
 - Confirmed the active five-minute timer still points to the original checkout and was active; `mailsync.service` was inactive at inspection. A certificate-verifying, authenticated read-only capability check confirmed alpha advertises `X-GM-EXT-1`. No label was created or written.

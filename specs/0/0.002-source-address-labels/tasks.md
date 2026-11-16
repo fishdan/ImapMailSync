@@ -48,6 +48,8 @@
 - [x] **T016** Check the packaged wheel includes migration 002; run CI-equivalent tests, `git diff --check`, Git-ignore checks, and staged secret-value scan. Record validation and reviewable handoff in `.config/ai/progress.ai` and `.config/ai/handoff.ai`.
 - [ ] **T017** After disposable gates pass, back up ignored production state, inspect timer status, verify migration preserves source baselines, run read-only alpha capability preflight, and observe a naturally arriving future message through the active five-minute timer. Record whether the live label and ten-minute delivery criteria were actually observed; do not claim them from disposable tests alone.
 
+  Rollout, migration verification, doctor, and first scheduled-cycle observation passed on 2026-11-15. A natural post-feature source arrival has not yet occurred, so the live label and ten-minute delivery checks remain open.
+
 ## Dependencies and execution order
 
 T001–T004 form the foundation. T005/T007 tests precede T006/T008 implementation. T009–T010 precede T011. T012 precedes T013. T014–T017 follow implementation in order. The existing five-minute timer and production state are not modified by planning; rollout happens only after the disposable gates and migration review. No task permits a historical alpha backfill, baseline reset, deletion, or older-source APPEND.

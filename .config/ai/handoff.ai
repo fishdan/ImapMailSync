@@ -1,5 +1,12 @@
 # Handoff
 
+## 2026-11-15 — Source labels deployed; natural-arrival acceptance outstanding
+
+- Branch: `feat/0.002-source-address-labels` in the active checkout `/home/dfish/IdeaProjects/ImapMailSync`, fast-forwarded to `dae2506` before this documentation commit. The five-minute `mailsync.timer` is enabled and active. A fresh private pre-rollout SQLite backup exists with mode 600.
+- Migration 002 applied to live private state through `status`: schema version 2, baseline and copy rows preserved exactly, zero legacy label jobs, integrity check passed. `doctor` passed for alpha and Yahoo. A controlled manual cycle and the 23:00 Eastern scheduled cycle both succeeded with zero copies, zero failures, and no pending labels. No live label write occurred because no post-feature source mail arrived.
+- T017 remains unchecked solely for observation of a naturally arriving future source message: confirm one alpha Inbox copy with its derived label, no duplicate on repeat, source unchanged, and arrival-to-alpha time within ten minutes. Inspect `PYTHONPATH=src python3 -m mailsync status --json` and `journalctl --user -u mailsync.service` after an arrival. Do not reset the baseline, create historical test mail, or delete live mail to force acceptance.
+- Validation before rollout: 68 application tests, 9 probe tests, compilation, wheel migration 002, targeted protocol/cycle tests, whitespace and private-value scans. This active branch is local ahead of origin; no PR has been opened.
+
 ## 2026-11-15 — Production preflight done; T017 rollout pending
 
 - Implementation branch: `feat/0.002-source-address-labels-impl` in `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. Active service checkout: `/home/dfish/IdeaProjects/ImapMailSync` on `feat/0.002-source-address-labels`, still running feature 0.001. The timer was active and the service inactive at inspection; no production code or schema switch has occurred.
