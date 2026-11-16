@@ -253,6 +253,53 @@ class IMAPSession:
                 matches.append(uid)
         return matches
 
+    def copy_absent_account_wide(self, marker: str) -> bool:
+        """Prove absence with targeted searches of Gmail All Mail, Trash, and Junk."""
+        if self.account.role != "destination" or not MARKER.fullmatch(marker):
+            raise IMAPError("INVALID_MARKER_SEARCH")
+        status, rows = self.client.list()
+        if status != "OK":
+            raise IMAPError("MAILBOX_LIST_FAILED")
+        mailboxes = []
+        saw_all = False
+        for row in rows or []:
+            if not row:
+                continue
+            match = re.match(rb"^\(([^)]*)\)\s+", row)
+            if not match:
+                raise IMAPError("MAILBOX_LIST_INVALID")
+            flags = set(match.group(1).split())
+            if b"\\Noselect" in flags:
+                continue
+            if not flags.intersection({b"\\All", b"\\Trash", b"\\Junk", b"\\Spam"}):
+                continue
+            try:
+                name = shlex.split(row.decode("ascii"))[-1]
+                encoded = encode_imap_label(name)
+            except (UnicodeDecodeError, ValueError, IndexError, LabelError) as exc:
+                raise IMAPError("MAILBOX_LIST_INVALID") from exc
+            mailboxes.append(encoded)
+            saw_all |= b"\\All" in flags
+        if not saw_all:
+            return False  # Inbox absence alone is not account-wide deletion.
+        absent = True
+        try:
+            for mailbox in mailboxes:
+                status, _ = self.client.select(mailbox, readonly=True)
+                if status != "OK":
+                    raise IMAPError("MAILBOX_SELECT_FAILED")
+                status, data = self.client.uid("SEARCH", None, "HEADER", "X-Mailsync-Key", marker)
+                if status != "OK" or not data:
+                    raise IMAPError("MAILBOX_SEARCH_FAILED")
+                if (data[0] or b"").split():
+                    absent = False
+                    break
+        finally:
+            status, _ = self.client.select("INBOX", readonly=False)
+            if status != "OK":
+                raise IMAPError("INBOX_RESELECT_FAILED")
+        return absent
+
 
 def _parenthesized_after(value: bytes, prefix: bytes) -> bytes | None:
     start = value.find(prefix)

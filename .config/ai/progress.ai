@@ -1,5 +1,11 @@
 # Progress Log
 
+## 2026-11-15 — T009–T011 pending-copy label recovery
+
+- Added test-first recovery for accepted copies with missing labels. Pending jobs run before source access and attempt age expiration. Saved destination UID and exact marker evidence are checked before labeling; a stale UID is reconciled to the verified marker. Accepted copies can be labeled after 24 hours and during a source outage without another APPEND. Lost STORE acknowledgement is resolved by FETCH before retry.
+- A missing Inbox copy remains pending unless exact-marker searches of Gmail All Mail, Trash, and Junk/Spam prove account-wide absence. Temporary lookup failures remain pending; multiple marker matches block that source. An unaccepted old job expires without APPEND. The disposable fixture now models Inbox and All Mail membership for a wire-level absence check.
+- Validation: 61 application tests passed with `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q`. No live provider or state was touched. T012 reporting and multi-source tests are next.
+
 ## 2026-11-15 — T007–T008 labeled new copies
 
 - Added failing cycle tests, then connected source-address validation, destination label preparation, atomic job creation before APPEND, existing marker reconciliation, exact destination UID label confirmation, and pending-label reporting. Prior feature-0.001 copy records are left without jobs. Invalid source address or missing Gmail capability blocks new APPEND for that source; healthy sources continue.

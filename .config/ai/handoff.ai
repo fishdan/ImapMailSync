@@ -1,5 +1,11 @@
 # Handoff
 
+## 2026-11-15 — Pending-copy repair in isolated worktree
+
+- Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T011 are complete. The original checkout continues to serve the active production timer with feature 0.001 code.
+- Recovery tests cover accepted copy and STORE acknowledgement interruption, after-24-hour repair with source outage, old unaccepted job expiration, stale UID, account-wide missing proof, Inbox-only pending, and multiple marker matches. 61 application tests passed. No live provider or state changed.
+- Next: T012–T013 operational reporting and doctor checks, then full disposable and packaging gates before any production rollout.
+
 ## 2026-11-15 — New-copy labeling path in isolated worktree
 
 - Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T008 are complete. The original checkout remains the production service path and has not loaded migration 002.

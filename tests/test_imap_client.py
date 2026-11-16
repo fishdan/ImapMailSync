@@ -153,6 +153,18 @@ class GmailProtocolTests(unittest.TestCase):
                     self.assertTrue(destination.marker_at_uid(uid, marker))
                     self.assertFalse(destination.marker_at_uid(uid, "ms1-" + "b" * 64))
 
+    def test_account_wide_absence_requires_all_mail_and_trash_search(self):
+        with GmailIMAPFixture() as fixture:
+            marker = "ms1-" + "c" * 64
+            uid = fixture.seed(b"X-Mailsync-Key: " + marker.encode() + b"\r\n\r\nbody")
+            fixture.mailbox_uids["INBOX"].remove(uid)
+            with self.connect(fixture, self.account("alpha")):
+                with IMAPSession(self.account("alpha")) as destination:
+                    self.assertFalse(destination.copy_absent_account_wide(marker))
+                    fixture.mailbox_uids["[Gmail]/All Mail"].remove(uid)
+                    self.assertTrue(destination.copy_absent_account_wide(marker))
+                    self.assertFalse(destination.marker_at_uid(uid, marker))
+
 
 if __name__ == "__main__":
     unittest.main()

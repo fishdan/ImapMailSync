@@ -30,6 +30,9 @@ class GmailIMAPFixture:
         self.gmail_extension = gmail_extension
         self.uidvalidity = 7
         self.messages: dict[int, Message] = {}
+        self.mailbox_uids: dict[str, set[int]] = {
+            "INBOX": set(), "[Gmail]/All Mail": set(), "[Gmail]/Trash": set()
+        }
         self.labels: set[str] = set()
         self.commands: list[str] = []
         self.faults: dict[str, str] = {}
@@ -51,6 +54,7 @@ class GmailIMAPFixture:
                 self.wfile.flush()
                 selected = False
                 readonly = False
+                self.mailbox = "INBOX"
                 while line := self.rfile.readline():
                     line = line.rstrip(b"\r\n")
                     literal = b""
@@ -99,23 +103,33 @@ class GmailIMAPFixture:
                 elif command == "LOGIN":
                     pass
                 elif command in {"SELECT", "EXAMINE"}:
+                    try:
+                        self.mailbox = shlex.split(args)[0]
+                    except (ValueError, IndexError):
+                        self._reply(tag, "BAD", "invalid mailbox")
+                        return selected, readonly
+                    if self.mailbox not in fixture.mailbox_uids:
+                        self._reply(tag, "NO", "mailbox unavailable")
+                        return selected, readonly
                     selected = True
                     readonly = command == "EXAMINE"
-                    self.wfile.write(f"* {len(fixture.messages)} EXISTS\r\n".encode())
+                    self.wfile.write(f"* {len(fixture.mailbox_uids[self.mailbox])} EXISTS\r\n".encode())
                     self.wfile.write(f"* OK [UIDVALIDITY {fixture.uidvalidity}] valid\r\n".encode())
                     self.wfile.write(f"* OK [UIDNEXT {fixture._next_uid}] next\r\n".encode())
                     self.wfile.write(("* FLAGS (\\Seen)\r\n* OK [READ-ONLY] selected\r\n"
                                       if readonly else
                                       "* FLAGS (\\Seen)\r\n* OK [READ-WRITE] selected\r\n").encode())
                 elif command == "LIST":
-                    names = ["INBOX", *sorted(fixture.labels)]
+                    names = ["INBOX", "[Gmail]/All Mail", "[Gmail]/Trash", *sorted(fixture.labels)]
                     try:
                         pattern = shlex.split(args)[-1]
                     except (ValueError, IndexError):
                         pattern = "*"
                     for name in names:
                         if pattern in {"*", "%", name}:
-                            self.wfile.write(b'* LIST (\\HasNoChildren) "/" ' +
+                            flag = (b"\\All" if name == "[Gmail]/All Mail" else
+                                    b"\\Trash" if name == "[Gmail]/Trash" else b"\\HasNoChildren")
+                            self.wfile.write(b"* LIST (" + flag + b') "/" ' +
                                              _quoted(name) + b"\r\n")
                 elif command == "CREATE":
                     try:
@@ -127,6 +141,7 @@ class GmailIMAPFixture:
                         self._reply(tag, "NO", "already exists")
                         return selected, readonly
                     fixture.labels.add(name)
+                    fixture.mailbox_uids[name] = set()
                 elif command == "APPEND":
                     if readonly or not literal:
                         self._reply(tag, "NO", "append unavailable")
@@ -170,6 +185,8 @@ class GmailIMAPFixture:
                                        criteria, re.IGNORECASE)
                     found = []
                     for message in fixture.messages.values():
+                        if message.uid not in fixture.mailbox_uids[self.mailbox]:
+                            continue
                         if marker:
                             expected = (marker.group(1) or marker.group(2)).encode()
                             headers = message.raw.split(b"\r\n\r\n", 1)[0]
@@ -184,7 +201,8 @@ class GmailIMAPFixture:
                     except ValueError:
                         self._reply(tag, "BAD", "invalid UID")
                         return
-                    message = fixture.messages.get(uid)
+                    message = (fixture.messages.get(uid)
+                               if uid in fixture.mailbox_uids[self.mailbox] else None)
                     if message:
                         fields = [f"UID {uid}"]
                         if "FLAGS" in details.upper():
@@ -213,7 +231,8 @@ class GmailIMAPFixture:
                     if readonly or "+X-GM-LABELS" not in details.upper():
                         self._reply(tag, "NO", "additive label STORE required")
                         return
-                    message = fixture.messages.get(int(uid_arg))
+                    message = (fixture.messages.get(int(uid_arg))
+                               if int(uid_arg) in fixture.mailbox_uids[self.mailbox] else None)
                     match = re.search(r"\+X-GM-LABELS(?:\.SILENT)?\s+\((.*)\)", details,
                                       re.IGNORECASE)
                     if not message or not match:
@@ -254,6 +273,8 @@ class GmailIMAPFixture:
             self._next_uid += 1
             self.messages[uid] = Message(uid, raw, internaldate or datetime.now(timezone.utc),
                                          set(flags), set(labels))
+            self.mailbox_uids["INBOX"].add(uid)
+            self.mailbox_uids["[Gmail]/All Mail"].add(uid)
             self.labels.update(labels)
             return uid
 

@@ -39,6 +39,9 @@ class World:
         self.capability = True
         self.label_failure = False
         self.label_store_calls = 0
+        self.lose_store_ack_once = False
+        self.account_wide_absent = False
+        self.marker_search_failure = False
 
 
 class FakeSession:
@@ -93,12 +96,20 @@ class FakeSession:
         if self.world.label_failure:
             raise IMAPError("LABEL_STORE_FAILED")
         self.world.labels.setdefault(uid, set()).add(label)
+        if self.world.lose_store_ack_once:
+            self.world.lose_store_ack_once = False
+            raise IMAPError("ACK_LOST")
 
     def marker_at_uid(self, uid, marker):
         return uid in self.world.destination.get(marker, [])
 
     def find_marker_exact(self, marker):
+        if self.world.marker_search_failure:
+            raise IMAPError("SEARCH_UNAVAILABLE")
         return self.world.destination.get(marker, [])[:]
+
+    def copy_absent_account_wide(self, marker):
+        return self.world.account_wide_absent
 
 
 class CycleTests(unittest.TestCase):
@@ -194,6 +205,108 @@ class CycleTests(unittest.TestCase):
         self.assertEqual(self.world.append_calls, 1)
         with Store(self.root) as store:
             self.assertEqual(store.label_job("yahoo", 7, 2)["status"], "pending")
+
+    def test_lost_store_ack_is_recovered_without_another_store_or_append(self):
+        self.world.lose_store_ack_once = True
+        first, first_code = run_once(self.root)
+        self.assertEqual(first_code, 1)
+        self.assertEqual(first["accounts"][0]["label_pending"], 1)
+        second, second_code = run_once(self.root)
+        self.assertEqual(second_code, 0)
+        self.assertEqual(second["accounts"][0]["labeled"], 1)
+        self.assertEqual(self.world.append_calls, 1)
+        self.assertEqual(self.world.label_store_calls, 1)
+
+    def _pending_copy(self, *, known_uid=True):
+        yahoo = load_account(self.root, "yahoo")
+        marker = marker_for("yahoo", yahoo.identity, 7, 2)
+        with Store(self.root) as store:
+            store.begin_label_job("yahoo", 7, 2, marker, "yahoo@example")
+            if known_uid:
+                store.confirm("yahoo", 7, 2, marker, 7, 10)
+        if known_uid:
+            self.world.destination[marker] = [10]
+        return marker
+
+    def test_accepted_copy_repaired_after_24_hours_during_source_outage(self):
+        self._pending_copy()
+        self.world.internaldate = datetime.now(timezone.utc) - timedelta(days=2)
+        self.world.unavailable.add("yahoo")
+        report, _ = run_once(self.root)
+        self.assertEqual(report["accounts"][0]["labeled"], 1)
+        self.assertEqual(self.world.append_calls, 0)
+        with Store(self.root) as store:
+            self.assertEqual(store.label_job("yahoo", 7, 2)["status"], "confirmed")
+
+    def test_lost_append_ack_is_reconciled_after_24_hours_without_source(self):
+        marker = self._pending_copy(known_uid=False)
+        self.world.destination[marker] = [10]
+        old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+        with Store(self.root) as store, store.db:
+            store.db.execute("UPDATE transfer_attempts SET started_at=? WHERE account_id='yahoo'", (old,))
+        self.world.unavailable.add("yahoo")
+        report, _ = run_once(self.root)
+        self.assertEqual(report["accounts"][0]["labeled"], 1)
+        self.assertEqual(self.world.append_calls, 0)
+        with Store(self.root) as store:
+            self.assertEqual(store.label_job("yahoo", 7, 2)["status"], "confirmed")
+            self.assertEqual(store.copy_record("yahoo", 7, 2)["destination_uid"], 10)
+
+    def test_stale_saved_uid_uses_exact_marker_reconciliation(self):
+        marker = self._pending_copy()
+        self.world.destination[marker] = [11]
+        self.world.source_uids["yahoo"] = []
+        report, code = run_once(self.root)
+        self.assertEqual(code, 0)
+        self.assertEqual(report["accounts"][0]["labeled"], 1)
+        with Store(self.root) as store:
+            self.assertEqual(store.label_job("yahoo", 7, 2)["destination_uid"], 11)
+            self.assertEqual(store.copy_record("yahoo", 7, 2)["destination_uid"], 11)
+
+    def test_unaccepted_old_job_expires_without_append(self):
+        self._pending_copy(known_uid=False)
+        old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+        with Store(self.root) as store, store.db:
+            store.db.execute("UPDATE transfer_attempts SET started_at=? WHERE account_id='yahoo'", (old,))
+        self.world.source_uids["yahoo"] = []
+        report, _ = run_once(self.root)
+        self.assertEqual(self.world.append_calls, 0)
+        self.assertEqual(report["accounts"][0]["issue_uids"], [2])
+        with Store(self.root) as store:
+            self.assertEqual(store.label_job("yahoo", 7, 2)["status"], "expired")
+
+    def test_inbox_miss_stays_pending_until_account_wide_absence_proven(self):
+        marker = self._pending_copy()
+        self.world.destination.pop(marker)
+        self.world.source_uids["yahoo"] = []
+        first, _ = run_once(self.root)
+        self.assertEqual(first["accounts"][0]["label_pending"], 1)
+        with Store(self.root) as store:
+            self.assertEqual(store.label_job("yahoo", 7, 2)["status"], "pending")
+        self.world.account_wide_absent = True
+        second, _ = run_once(self.root)
+        self.assertEqual(self.world.append_calls, 0)
+        self.assertEqual(second["accounts"][0]["status"], "failed")
+        self.assertEqual(second["accounts"][0]["label_pending"], 0)
+        with Store(self.root) as store:
+            self.assertEqual(store.label_job("yahoo", 7, 2)["status"], "missing")
+
+    def test_marker_search_failure_leaves_job_pending(self):
+        self._pending_copy(known_uid=False)
+        self.world.marker_search_failure = True
+        self.world.source_uids["yahoo"] = []
+        run_once(self.root)
+        with Store(self.root) as store:
+            self.assertEqual(store.label_job("yahoo", 7, 2)["status"], "pending")
+
+    def test_multiple_pending_marker_matches_block_without_append(self):
+        marker = self._pending_copy(known_uid=False)
+        self.world.destination[marker] = [10, 11]
+        self.world.source_uids["yahoo"] = []
+        report, code = run_once(self.root)
+        self.assertEqual(code, 3)
+        self.assertEqual(report["accounts"][0]["error_code"], "MULTIPLE_MARKER_MATCHES")
+        self.assertEqual(self.world.append_calls, 0)
 
     def test_lost_ack_is_reconciled_before_retry(self):
         self.world.lose_ack_once = True

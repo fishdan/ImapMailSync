@@ -205,6 +205,27 @@ class Store:
                 (status, utc_now(), error_code, account_id, uidvalidity, source_uid),
             )
 
+    def reconcile_destination_uid(self, account_id: str, uidvalidity: int, source_uid: int,
+                                  marker: str, destination_uidvalidity: int,
+                                  destination_uid: int) -> None:
+        """Update stale UID evidence only after the caller verifies the exact marker."""
+        job = self.label_job(account_id, uidvalidity, source_uid)
+        copy = self.copy_record(account_id, uidvalidity, source_uid)
+        if (not job or not copy or job["status"] != "pending" or job["marker"] != marker
+                or copy["marker"] != marker or destination_uidvalidity < 1 or destination_uid < 1):
+            raise StateError("COPY_EVIDENCE_CHANGED")
+        with self.db:
+            self.db.execute(
+                "UPDATE copy_records SET destination_uidvalidity=?,destination_uid=? "
+                "WHERE account_id=? AND uidvalidity=? AND source_uid=?",
+                (destination_uidvalidity, destination_uid, account_id, uidvalidity, source_uid),
+            )
+            self.db.execute(
+                "UPDATE label_jobs SET destination_uidvalidity=?,destination_uid=?,updated_at=? "
+                "WHERE account_id=? AND uidvalidity=? AND source_uid=?",
+                (destination_uidvalidity, destination_uid, utc_now(), account_id, uidvalidity, source_uid),
+            )
+
     def mark_uncertain(self, account_id: str, uidvalidity: int, source_uid: int, error_code: str) -> None:
         with self.db:
             self.db.execute(

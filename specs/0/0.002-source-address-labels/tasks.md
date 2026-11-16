@@ -28,9 +28,9 @@
 
 **Independent test**: Fault an accepted APPEND or STORE acknowledgement, advance the clock, restart, and find exactly one labeled alpha copy.
 
-- [ ] **T009 [US2]** Write failing interruption tests in `tests/test_cycle.py` and the T001 fixture: crash after accepted APPEND, lost APPEND acknowledgement, crash after copy-ledger commit, lost STORE acknowledgement, and temporary connection failure. Assert that state retains the same marker and one copy.
-- [ ] **T010 [US2]** Write failing after-24-hour tests in `tests/test_cycle.py`: targeted saved-UID/marker repair succeeds after source age-out and during source outage; unaccepted old mail never APPENDs; verified account-wide missing copy is reported without recreation; an Inbox-only miss remains pending/inaccessible; multiple marker matches block safely.
-- [ ] **T011 [US2]** Implement pending-job processing and exact target verification in `src/mailsync/cycle.py`, `src/mailsync/state.py`, and `src/mailsync/imap_client.py`. Use targeted marker checks before declaring account-wide absence; an Inbox-only miss stays pending. Reconcile jobs before attempt expiration, and keep transient failures pending. Pass T009–T010.
+- [x] **T009 [US2]** Write failing interruption tests in `tests/test_cycle.py` and the T001 fixture: crash after accepted APPEND, lost APPEND acknowledgement, crash after copy-ledger commit, lost STORE acknowledgement, and temporary connection failure. Assert that state retains the same marker and one copy.
+- [x] **T010 [US2]** Write failing after-24-hour tests in `tests/test_cycle.py`: targeted saved-UID/marker repair succeeds after source age-out and during source outage; unaccepted old mail never APPENDs; verified account-wide missing copy is reported without recreation; an Inbox-only miss remains pending/inaccessible; multiple marker matches block safely.
+- [x] **T011 [US2]** Implement pending-job processing and exact target verification in `src/mailsync/cycle.py`, `src/mailsync/state.py`, and `src/mailsync/imap_client.py`. Use targeted marker checks before declaring account-wide absence; an Inbox-only miss stays pending. Reconcile jobs before attempt expiration, and keep transient failures pending. Pass T009–T010.
 
 ## Phase 4: User Story 3 — Multi-source correctness and operations (P3)
 

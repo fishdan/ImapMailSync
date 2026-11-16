@@ -79,6 +79,69 @@ def _confirm_label(store: Store, destination: IMAPSession, account_id: str,
     store.set_label_status(account_id, source_uidvalidity, source_uid, "confirmed")
 
 
+def _repair_pending(store: Store, destination: IMAPSession, account_id: str,
+                    label: str) -> tuple[int, int, int, int, int, set[int], str | None, bool]:
+    """Reconcile only recorded jobs, without reading source mail or broad old mail."""
+    copied = labeled = pending = skipped = missing = 0
+    issue_uids: set[int] = set()
+    error_code = None
+    for job in store.pending_label_jobs(account_id):
+        uid = job["source_uid"]
+        key = (account_id, job["uidvalidity"], uid)
+        try:
+            target = None
+            if (job["destination_uid"] is not None
+                    and job["destination_uidvalidity"] == destination.uidvalidity
+                    and destination.marker_at_uid(job["destination_uid"], job["marker"])):
+                target = job["destination_uid"]
+            if target is None:
+                matches = destination.find_marker_exact(job["marker"])
+                if len(matches) > 1:
+                    store.block_source(account_id)
+                    store.set_label_status(*key, "pending", "MULTIPLE_MARKER_MATCHES")
+                    issue_uids.add(uid)
+                    return (copied, labeled, pending + 1, skipped, missing,
+                            issue_uids, "MULTIPLE_MARKER_MATCHES", True)
+                if matches:
+                    target = matches[0]
+                elif job["destination_uid"] is not None:
+                    if destination.copy_absent_account_wide(job["marker"]):
+                        store.set_label_status(*key, "missing", "DESTINATION_COPY_MISSING")
+                        missing += 1
+                        issue_uids.add(uid)
+                        error_code = "DESTINATION_COPY_MISSING"
+                    else:
+                        store.set_label_status(*key, "pending", "DESTINATION_COPY_INACCESSIBLE")
+                        pending += 1
+                        issue_uids.add(uid)
+                        error_code = "DESTINATION_COPY_INACCESSIBLE"
+                    continue
+                else:
+                    started = datetime.fromisoformat(store.attempt(*key)["started_at"])
+                    if started < datetime.now(timezone.utc) - timedelta(hours=24):
+                        store.set_label_status(*key, "expired", "AGE_WINDOW_EXPIRED")
+                        store.mark_failed(*key, "AGE_WINDOW_EXPIRED")
+                        issue_uids.add(uid)
+                        skipped += 1
+                        error_code = "AGE_WINDOW_EXPIRED"
+                    continue
+            if job["destination_uid"] is None:
+                store.confirm(*key, job["marker"], destination.uidvalidity, target)
+                copied += 1
+            elif (job["destination_uidvalidity"], job["destination_uid"]) != (
+                    destination.uidvalidity, target):
+                store.reconcile_destination_uid(*key, job["marker"],
+                                                destination.uidvalidity, target)
+            _confirm_label(store, destination, *key, target, label)
+            labeled += 1
+        except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError):
+            store.set_label_status(*key, "pending", "LABEL_RECOVERY_UNCONFIRMED")
+            pending += 1
+            issue_uids.add(uid)
+            error_code = "LABEL_RECOVERY_UNCONFIRMED"
+    return copied, labeled, pending, skipped, missing, issue_uids, error_code, False
+
+
 def _sync_source(store: Store, source_account: Account, destination_account: Account,
                  destination: IMAPSession) -> dict:
     account_id = source_account.account_id
@@ -100,14 +163,21 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
     except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError) as exc:
         code = str(exc) if isinstance(exc, IMAPError) else "LABEL_PREPARE_FAILED"
         return _result(account_id, "failed", failed=1, error_code=code)
-    copied = skipped = failed = 0
-    labeled = label_pending = 0
-    error_code = None
+    try:
+        copied, labeled, label_pending, skipped, missing, issue_uids, error_code, blocked = (
+            _repair_pending(store, destination, account_id, label))
+    except StateError:
+        store.block_source(account_id)
+        return _result(account_id, "blocked", failed=1, error_code="STATE_INCONSISTENT")
+    if blocked:
+        return _result(account_id, "blocked", copied, skipped, label_pending,
+                       error_code, issue_uids, labeled, label_pending)
+    failed = label_pending + missing
     expired_now = store.expire_old_attempts(account_id, baseline["uidvalidity"],
                                             datetime.now(timezone.utc) - timedelta(hours=24))
-    issue_uids = set(expired_now)
+    issue_uids.update(expired_now)
     expired = store.expired_uids(account_id, baseline["uidvalidity"])
-    if expired_now:
+    if expired_now and not error_code:
         error_code = "AGE_WINDOW_EXPIRED"
     try:
         with IMAPSession(source_account) as source:
@@ -145,7 +215,6 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
                                       destination.uidvalidity, matches[0])
                         copied += 1  # Pre-feature accepted copy: no backfill label job.
                         continue
-                    store.begin_label_job(account_id, source.uidvalidity, uid, marker, label)
                     if not matches:
                         if not within_24_hours(item.internaldate, datetime.now(timezone.utc)):
                             store.mark_failed(account_id, source.uidvalidity, uid, "AGE_WINDOW_EXPIRED")
@@ -153,8 +222,11 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
                             skipped += 1
                             error_code = "AGE_WINDOW_EXPIRED"
                             continue
+                        store.begin_label_job(account_id, source.uidvalidity, uid, marker, label)
                         destination.append_copy(item.raw, item.seen, item.internaldate, marker)
                         matches = _matches(destination, marker, after_append=True)
+                    else:
+                        store.begin_label_job(account_id, source.uidvalidity, uid, marker, label)
                     if len(matches) > 1:
                         store.mark_uncertain(account_id, source.uidvalidity, uid, "MULTIPLE_MARKER_MATCHES")
                         store.block_source(account_id)
@@ -196,6 +268,13 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
     except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError):
         failed += 1
         error_code = "SOURCE_UNAVAILABLE"
+    remaining = store.pending_label_jobs(account_id)
+    if len(remaining) > label_pending:
+        failed += len({job["source_uid"] for job in remaining} - issue_uids)
+        label_pending = len(remaining)
+        issue_uids.update(job["source_uid"] for job in remaining)
+        if not error_code:
+            error_code = "LABEL_UNCONFIRMED"
     return _result(account_id, "failed" if failed else "success", copied, skipped, failed,
                    error_code, issue_uids, labeled, label_pending)
 
