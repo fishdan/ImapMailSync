@@ -163,6 +163,8 @@ class GmailProtocolTests(unittest.TestCase):
                     self.assertFalse(destination.copy_absent_account_wide(marker))
                     fixture.mailbox_uids["[Gmail]/All Mail"].remove(uid)
                     self.assertTrue(destination.copy_absent_account_wide(marker))
+                    fixture.mailbox_uids.pop("[Gmail]/Spam")
+                    self.assertFalse(destination.copy_absent_account_wide(marker))
                     self.assertFalse(destination.marker_at_uid(uid, marker))
 
 

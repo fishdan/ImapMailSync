@@ -162,7 +162,9 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
         destination.ensure_label(label)
     except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError) as exc:
         code = str(exc) if isinstance(exc, IMAPError) else "LABEL_PREPARE_FAILED"
-        return _result(account_id, "failed", failed=1, error_code=code)
+        jobs = store.pending_label_jobs(account_id)
+        return _result(account_id, "failed", failed=max(1, len(jobs)), error_code=code,
+                       issue_uids={job["source_uid"] for job in jobs}, label_pending=len(jobs))
     try:
         copied, labeled, label_pending, skipped, missing, issue_uids, error_code, blocked = (
             _repair_pending(store, destination, account_id, label))

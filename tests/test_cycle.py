@@ -218,6 +218,11 @@ class CycleTests(unittest.TestCase):
         self.assertEqual(self.world.append_calls, 1)
         with Store(self.root) as store:
             self.assertEqual(store.label_job("yahoo", 7, 2)["status"], "pending")
+        self.world.capability = False
+        blocked, blocked_code = run_once(self.root)
+        self.assertEqual(blocked_code, 1)
+        self.assertEqual(blocked["accounts"][0]["label_pending"], 1)
+        self.assertEqual(blocked["accounts"][0]["issue_uids"], [2])
 
     def test_lost_store_ack_is_recovered_without_another_store_or_append(self):
         self.world.lose_store_ack_once = True

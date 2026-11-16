@@ -31,7 +31,8 @@ class GmailIMAPFixture:
         self.uidvalidity = 7
         self.messages: dict[int, Message] = {}
         self.mailbox_uids: dict[str, set[int]] = {
-            "INBOX": set(), "[Gmail]/All Mail": set(), "[Gmail]/Trash": set()
+            "INBOX": set(), "[Gmail]/All Mail": set(), "[Gmail]/Trash": set(),
+            "[Gmail]/Spam": set()
         }
         self.labels: set[str] = set()
         self.commands: list[str] = []
@@ -120,7 +121,7 @@ class GmailIMAPFixture:
                                       if readonly else
                                       "* FLAGS (\\Seen)\r\n* OK [READ-WRITE] selected\r\n").encode())
                 elif command == "LIST":
-                    names = ["INBOX", "[Gmail]/All Mail", "[Gmail]/Trash", *sorted(fixture.labels)]
+                    names = list(fixture.mailbox_uids)
                     try:
                         pattern = shlex.split(args)[-1]
                     except (ValueError, IndexError):
@@ -128,7 +129,8 @@ class GmailIMAPFixture:
                     for name in names:
                         if pattern in {"*", "%", name}:
                             flag = (b"\\All" if name == "[Gmail]/All Mail" else
-                                    b"\\Trash" if name == "[Gmail]/Trash" else b"\\HasNoChildren")
+                                    b"\\Trash" if name == "[Gmail]/Trash" else
+                                    b"\\Junk" if name == "[Gmail]/Spam" else b"\\HasNoChildren")
                             self.wfile.write(b"* LIST (" + flag + b') "/" ' +
                                              _quoted(name) + b"\r\n")
                 elif command == "CREATE":

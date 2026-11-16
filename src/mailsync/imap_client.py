@@ -266,7 +266,7 @@ class IMAPSession:
         if status != "OK":
             raise IMAPError("MAILBOX_LIST_FAILED")
         mailboxes = []
-        saw_all = False
+        special_flags = set()
         for row in rows or []:
             if not row:
                 continue
@@ -276,7 +276,8 @@ class IMAPSession:
             flags = set(match.group(1).split())
             if b"\\Noselect" in flags:
                 continue
-            if not flags.intersection({b"\\All", b"\\Trash", b"\\Junk", b"\\Spam"}):
+            matched_flags = flags.intersection({b"\\All", b"\\Trash", b"\\Junk", b"\\Spam"})
+            if not matched_flags:
                 continue
             try:
                 name = shlex.split(row.decode("ascii"))[-1]
@@ -284,8 +285,9 @@ class IMAPSession:
             except (UnicodeDecodeError, ValueError, IndexError, LabelError) as exc:
                 raise IMAPError("MAILBOX_LIST_INVALID") from exc
             mailboxes.append(encoded)
-            saw_all |= b"\\All" in flags
-        if not saw_all:
+            special_flags.update(matched_flags)
+        if (b"\\All" not in special_flags or b"\\Trash" not in special_flags
+                or not special_flags.intersection({b"\\Junk", b"\\Spam"})):
             return False  # Inbox absence alone is not account-wide deletion.
         absent = True
         try:

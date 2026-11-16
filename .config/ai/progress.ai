@@ -1,5 +1,12 @@
 # Progress Log
 
+## 2026-11-15 — T017 production preflight, rollout pending
+
+- Confirmed the active five-minute timer still points to the original checkout and was active; `mailsync.service` was inactive at inspection. A certificate-verifying, authenticated read-only capability check confirmed alpha advertises `X-GM-EXT-1`. No label was created or written.
+- Created a private mode-600 SQLite backup with the backup API. An isolated migration rehearsal upgraded a copy from schema 1 to 2, preserved all baseline and copy-record rows, and created zero jobs for legacy copies. The first comparison script reported a false mismatch because it compared SQLite row objects to tuples; converting both sides to tuples confirmed preservation. Production state remains schema 1.
+- Tightened absence proof: a pending copy is not marked missing unless Gmail exposes All Mail, Trash, and Junk/Spam for targeted searches. An unsupported capability now reports any existing pending source UIDs. Targeted cycle and protocol tests passed (26 and 6 tests), as did compilation and whitespace checks. The prior 68-test full suite passed before this narrow safety change; the two affected suites were rerun afterward.
+- Next action requires a coordinated production code switch: pause the active timer, take a fresh private backup, fast-forward the original checkout to the validated implementation, migrate through the application, run doctor/status, resume the timer, and observe natural future mail. No production code switch or label write has occurred.
+
 ## 2026-11-15 — T014–T016 disposable and packaging gates
 
 - Added a localhost IMAP end-to-end suite using the real cycle and `imaplib` protocol methods. It verifies labels on two sources, age cutoff, source flag preservation, three zero-copy repeats, one-source outage recovery, lost APPEND/STORE acknowledgements with after-24-hour repair, and a 100-message batch. The batch yielded 100 labeled Inbox copies with zero duplicate copies on repeat; the 68-test application suite completed in 46.84 seconds. No real provider was used.
