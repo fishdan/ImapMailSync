@@ -7,9 +7,9 @@
 ## Phase 1: Protocol and state foundation
 
 - [x] **T001** Create a disposable Gmail-extension IMAP fixture under `tests/` or `experiments/direct_imap/` supporting `X-GM-EXT-1`, LIST/CREATE, `UID FETCH X-GM-LABELS`, additive `UID STORE`, marker search, and fault injection. Keep its addresses synthetic and document how CI runs it.
-- [ ] **T002** Write failing label derivation and safe IMAP encoding tests in `tests/test_labels.py`: final suffix only, case, two addresses mapping to one label, invalid shape, controls, slash, quoting, and non-ASCII behavior.
-- [ ] **T003** Write failing migration and job transition tests in `tests/test_state.py`: version-1 upgrade without baseline or ledger loss, empty jobs for legacy copies, job-before-APPEND durability, UID evidence, terminal states, and pending-job queries.
-- [ ] **T004** Implement source-label derivation in `src/mailsync/labels.py` and migration `src/mailsync/migrations/002_label_jobs.sql` plus transaction-safe job methods in `src/mailsync/state.py`; pass T002–T003 tests.
+- [x] **T002** Write failing label derivation and safe IMAP encoding tests in `tests/test_labels.py`: final suffix only, case, two addresses mapping to one label, invalid shape, controls, slash, quoting, and non-ASCII behavior.
+- [x] **T003** Write failing migration and job transition tests in `tests/test_state.py`: version-1 upgrade without baseline or ledger loss, empty jobs for legacy copies, job-before-APPEND durability, UID evidence, terminal states, and pending-job queries.
+- [x] **T004** Implement source-label derivation in `src/mailsync/labels.py` and migration `src/mailsync/migrations/002_label_jobs.sql` plus transaction-safe job methods in `src/mailsync/state.py`; pass T002–T003 tests.
 
 ## Phase 2: User Story 1 — Label each future copy (P1)
 

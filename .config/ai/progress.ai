@@ -1,5 +1,12 @@
 # Progress Log
 
+## 2026-11-15 — T002–T004 source label and durable job foundation
+
+- Built this phase in isolated worktree `feat/0.002-source-address-labels-impl` because the active five-minute service executes code from the original checkout. No migration has been applied to live state.
+- Added test-first source-label derivation and ASCII IMAP quoted-string encoding. Invalid address shapes, controls, and non-ASCII values fail with sanitized codes. The final domain suffix rule preserves configured case and allows intentional shared labels.
+- Added packaged migration 002 with an initially empty `label_jobs` table, an atomic attempt-plus-job creation method before APPEND, pending job queries, immutable marker/label identity, UID evidence recorded in the same transaction as copy confirmation, and guarded terminal transitions. Pending jobs are excluded from generic attempt expiration.
+- Validation: the new label tests initially failed because `mailsync.labels` did not exist. After implementation, `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q` passed 44 tests; compilation and `git diff --check` passed. No production dependency was added; the 2026-11-15 dependency review remains current. T005 protocol tests are next.
+
 ## 2026-11-15 — T001 disposable Gmail-extension IMAP fixture
 
 - Added a localhost-only, synthetic IMAP fixture with `X-GM-EXT-1` capability, LIST/CREATE, Inbox APPEND and UID marker search, exact UID label FETCH, and additive UID STORE. It supports one-shot command rejection, connection loss, and lost acknowledgements after accepted APPEND or STORE. No real provider or account was touched.

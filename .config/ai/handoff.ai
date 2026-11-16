@@ -1,5 +1,11 @@
 # Handoff
 
+## 2026-11-15 — Label/state foundation in isolated worktree
+
+- Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T004 are complete. The original checkout remains on `feat/0.002-source-address-labels` and is the path used by the active systemd timer; do not copy half-finished migration/code there.
+- Added `labels.py`, migration 002, label job state methods, and tests. The version-1 upgrade test confirms legacy baselines/copy records survive and receive no job. 44 application tests, compilation, and `git diff --check` passed. No live state or label was touched.
+- Next task: T005 failing IMAP protocol tests, then T006 protocol implementation. Keep all production code changes in the isolated worktree until disposable gates and a coordinated timer-safe rollout.
+
 ## 2026-11-15 — T001 protocol fixture complete
 
 - Branch: `feat/0.002-source-address-labels`. T001 is complete with `tests/gmail_imap_fixture.py` and `tests/test_gmail_imap_fixture.py`; it uses only synthetic mail and localhost `imaplib` connections. The feature remains unimplemented in production code, and no live labels or state changed.
