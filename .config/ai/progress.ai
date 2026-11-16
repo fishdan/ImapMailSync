@@ -1,5 +1,10 @@
 # Progress Log
 
+## 2026-11-15 — T005–T006 Gmail label protocol
+
+- Added failing wire-level tests against the disposable `imaplib` fixture, then implemented read-write destination selection, a `X-GM-EXT-1` capability gate, exact label LIST/CREATE/reuse, additive `UID STORE +X-GM-LABELS`, exact UID label FETCH and parsing, and targeted marker search/UID header verification. Source selection stays read only. The fixture now serves header-only UID FETCH for marker verification.
+- Validation: `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q` passed 47 tests; compilation and `git diff --check` passed. Tests confirm existing labels survive and no duplicate CREATE occurs. No live mailbox was accessed from the isolated worktree; the existing monthly dependency review remains current.
+
 ## 2026-11-15 — T002–T004 source label and durable job foundation
 
 - Built this phase in isolated worktree `feat/0.002-source-address-labels-impl` because the active five-minute service executes code from the original checkout. No migration has been applied to live state.

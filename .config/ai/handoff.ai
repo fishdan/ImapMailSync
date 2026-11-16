@@ -1,5 +1,10 @@
 # Handoff
 
+## 2026-11-15 — Gmail protocol operations in isolated worktree
+
+- Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T006 are complete. The active production checkout remains unchanged beyond the T001 test fixture commit and still runs feature 0.001.
+- 47 application tests, compilation, and `git diff --check` passed. No live account or state was touched. Next: T007 failing copy-cycle tests, then T008 cycle integration; retain isolated development until all disposable and migration gates pass.
+
 ## 2026-11-15 — Label/state foundation in isolated worktree
 
 - Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T004 are complete. The original checkout remains on `feat/0.002-source-address-labels` and is the path used by the active systemd timer; do not copy half-finished migration/code there.

@@ -6,6 +6,9 @@ from unittest.mock import patch
 from mailsync.baseline import marker_for
 from mailsync.config import Account
 from mailsync.imap_client import IMAPSession
+from mailsync.imap_client import IMAPError
+from gmail_imap_fixture import GmailIMAPFixture
+import imaplib
 
 
 class FakeIMAP:
@@ -97,6 +100,58 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn(("UID", "SEARCH", (None, "SINCE", "13-Nov-2026", "HEADER",
                                            "X-Mailsync-Key", marker)), self.fake.commands)
         self.assertFalse(any(command[0] in {"STORE", "EXPUNGE"} for command in self.fake.commands))
+
+
+class GmailProtocolTests(unittest.TestCase):
+    def account(self, account_id):
+        return Account(account_id, "Disposable", f"{account_id}@example.test", "synthetic",
+                       "127.0.0.1", 993)
+
+    def connect(self, fixture, account):
+        def factory(*_args, **_kwargs):
+            return imaplib.IMAP4(fixture.host, fixture.port)
+        return patch("mailsync.imap_client.imaplib.IMAP4_SSL", side_effect=factory)
+
+    def test_source_readonly_destination_readwrite_and_capability_gate(self):
+        with GmailIMAPFixture(gmail_extension=False) as fixture:
+            with self.connect(fixture, self.account("source")):
+                with IMAPSession(self.account("source")):
+                    pass
+            self.assertIn("EXAMINE INBOX", fixture.commands)
+            with self.connect(fixture, self.account("alpha")):
+                with IMAPSession(self.account("alpha")) as destination:
+                    with self.assertRaises(IMAPError) as caught:
+                        destination.ensure_label("source/example")
+            self.assertEqual(str(caught.exception), "LABEL_CAPABILITY_UNAVAILABLE")
+            self.assertIn("SELECT INBOX", fixture.commands)
+            self.assertFalse(any(command.startswith("CREATE") for command in fixture.commands))
+
+    def test_create_reuse_additive_store_and_exact_fetch(self):
+        with GmailIMAPFixture() as fixture:
+            uid = fixture.seed(b"X-Mailsync-Key: ms1-test\r\n\r\nbody", labels={"other"})
+            with self.connect(fixture, self.account("alpha")):
+                with IMAPSession(self.account("alpha")) as destination:
+                    destination.ensure_label('source/"quoted"')
+                    destination.ensure_label('source/"quoted"')
+                    self.assertEqual(destination.labels_for_uid(uid), {"other"})
+                    destination.add_label(uid, 'source/"quoted"')
+                    self.assertEqual(destination.labels_for_uid(uid),
+                                     {"other", 'source/"quoted"'})
+            self.assertEqual(sum(command.startswith("CREATE") for command in fixture.commands), 1)
+            self.assertEqual(fixture.messages[uid].labels, {"other", 'source/"quoted"'})
+            self.assertTrue(any(command.startswith("UID STORE") and "+X-GM-LABELS" in command
+                                for command in fixture.commands))
+
+    def test_exact_marker_lookup_and_uid_verification(self):
+        with GmailIMAPFixture() as fixture:
+            marker = "ms1-" + "a" * 64
+            uid = fixture.seed(b"X-Mailsync-Key: " + marker.encode() + b"\r\n\r\nbody")
+            fixture.seed(b"X-Mailsync-Key: " + marker.encode() + b"-other\r\n\r\nbody")
+            with self.connect(fixture, self.account("alpha")):
+                with IMAPSession(self.account("alpha")) as destination:
+                    self.assertEqual(destination.find_marker_exact(marker), [uid])
+                    self.assertTrue(destination.marker_at_uid(uid, marker))
+                    self.assertFalse(destination.marker_at_uid(uid, "ms1-" + "b" * 64))
 
 
 if __name__ == "__main__":

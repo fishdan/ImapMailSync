@@ -5,9 +5,11 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 import imaplib
 import re
+import shlex
 import ssl
 
 from .config import Account
+from .labels import LabelError, encode_imap_label
 
 
 UID = re.compile(rb"\bUID (\d+)\b")
@@ -37,7 +39,7 @@ class IMAPSession:
             status, _ = self.client.login(account.username, account.password)
             if status != "OK":
                 raise IMAPError("AUTH_FAILED")
-            status, _ = self.client.select("INBOX", readonly=True)
+            status, _ = self.client.select("INBOX", readonly=account.role == "source")
             if status != "OK":
                 raise IMAPError("INBOX_UNAVAILABLE")
             self.uidvalidity = self._response_integer("UIDVALIDITY")
@@ -147,3 +149,127 @@ class IMAPSession:
         status, _ = self.client.append("INBOX", flags, internaldate, marked)
         if status != "OK":
             raise IMAPError("DESTINATION_APPEND_FAILED")
+
+    def supports_labels(self) -> bool:
+        if self.account.role != "destination":
+            return False
+        status, data = self.client.capability()
+        return status == "OK" and any(b"X-GM-EXT-1" in value.split() for value in data if value)
+
+    def ensure_label(self, label: str) -> None:
+        if self.account.role != "destination" or not self.supports_labels():
+            raise IMAPError("LABEL_CAPABILITY_UNAVAILABLE")
+        try:
+            encoded = encode_imap_label(label)
+        except LabelError as exc:
+            raise IMAPError("INVALID_LABEL_NAME") from exc
+        if self._label_exists(label, encoded):
+            return
+        status, _ = self.client.create(encoded)
+        if status != "OK" and not self._label_exists(label, encoded):
+            raise IMAPError("LABEL_CREATE_FAILED")
+        if not self._label_exists(label, encoded):
+            raise IMAPError("LABEL_CREATE_UNCONFIRMED")
+
+    def _label_exists(self, label: str, encoded: bytes) -> bool:
+        status, data = self.client.list(b'""', encoded)
+        if status != "OK":
+            raise IMAPError("LABEL_LIST_FAILED")
+        for line in data or []:
+            if not line:
+                continue
+            try:
+                names = shlex.split(line.decode("ascii"))
+            except (ValueError, UnicodeDecodeError) as exc:
+                raise IMAPError("LABEL_LIST_INVALID") from exc
+            if names and names[-1] == label:
+                return True
+        return False
+
+    def labels_for_uid(self, uid: int) -> set[str]:
+        if self.account.role != "destination" or uid < 1:
+            raise IMAPError("INVALID_LABEL_FETCH")
+        status, data = self.client.uid("FETCH", str(uid), "(UID X-GM-LABELS)")
+        if status != "OK":
+            raise IMAPError("LABEL_FETCH_FAILED")
+        for item in data or []:
+            if not isinstance(item, bytes):
+                continue
+            uid_match = UID.search(item)
+            if not uid_match or int(uid_match.group(1)) != uid:
+                continue
+            content = _parenthesized_after(item, b"X-GM-LABELS ")
+            if content is None:
+                raise IMAPError("LABEL_FETCH_INVALID")
+            try:
+                return set(shlex.split(content.decode("ascii")))
+            except (UnicodeDecodeError, ValueError) as exc:
+                raise IMAPError("LABEL_FETCH_INVALID") from exc
+        raise IMAPError("DESTINATION_COPY_MISSING")
+
+    def add_label(self, uid: int, label: str) -> None:
+        if self.account.role != "destination" or uid < 1:
+            raise IMAPError("INVALID_LABEL_STORE")
+        try:
+            encoded = encode_imap_label(label)
+        except LabelError as exc:
+            raise IMAPError("INVALID_LABEL_NAME") from exc
+        status, _ = self.client.uid("STORE", str(uid), "+X-GM-LABELS", b"(" + encoded + b")")
+        if status != "OK":
+            raise IMAPError("LABEL_STORE_FAILED")
+
+    def marker_at_uid(self, uid: int, marker: str) -> bool:
+        if self.account.role != "destination" or uid < 1 or not MARKER.fullmatch(marker):
+            raise IMAPError("INVALID_MARKER_FETCH")
+        status, data = self.client.uid(
+            "FETCH", str(uid), "(UID BODY.PEEK[HEADER.FIELDS (X-Mailsync-Key)])")
+        if status != "OK":
+            raise IMAPError("MARKER_FETCH_FAILED")
+        for item in data or []:
+            if not isinstance(item, tuple) or len(item) < 2:
+                continue
+            metadata, headers = item
+            uid_match = UID.search(metadata)
+            if not uid_match or int(uid_match.group(1)) != uid or not isinstance(headers, bytes):
+                raise IMAPError("MARKER_FETCH_INVALID")
+            return any(line.strip() == b"X-Mailsync-Key: " + marker.encode("ascii")
+                       for line in headers.splitlines())
+        return False
+
+    def find_marker_exact(self, marker: str) -> list[int]:
+        if self.account.role != "destination" or not MARKER.fullmatch(marker):
+            raise IMAPError("INVALID_MARKER_SEARCH")
+        self.client.noop()
+        status, data = self.client.uid("SEARCH", None, "HEADER", "X-Mailsync-Key", marker)
+        if status != "OK" or not data:
+            raise IMAPError("DESTINATION_SEARCH_FAILED")
+        matches = []
+        for raw_uid in (data[0] or b"").split():
+            try:
+                uid = int(raw_uid)
+            except ValueError as exc:
+                raise IMAPError("DESTINATION_SEARCH_INVALID") from exc
+            if self.marker_at_uid(uid, marker):
+                matches.append(uid)
+        return matches
+
+
+def _parenthesized_after(value: bytes, prefix: bytes) -> bytes | None:
+    start = value.find(prefix)
+    if start < 0:
+        return None
+    start += len(prefix)
+    if value[start:start + 1] != b"(":
+        return None
+    quoted = escaped = False
+    for index in range(start + 1, len(value)):
+        char = value[index]
+        if escaped:
+            escaped = False
+        elif quoted and char == 92:
+            escaped = True
+        elif char == 34:
+            quoted = not quoted
+        elif char == 41 and not quoted:
+            return value[start + 1:index]
+    return None

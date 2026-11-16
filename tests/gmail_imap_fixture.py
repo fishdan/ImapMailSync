@@ -199,6 +199,14 @@ class GmailIMAPFixture:
                         if "BODY.PEEK[]" in details.upper():
                             prefix += f" BODY[] {{{len(message.raw)}}}\r\n".encode()
                             self.wfile.write(prefix + message.raw + b")\r\n")
+                        elif "BODY.PEEK[HEADER.FIELDS" in details.upper():
+                            header = message.raw.split(b"\r\n\r\n", 1)[0]
+                            selected_headers = b"\r\n".join(line for line in header.split(b"\r\n")
+                                                            if line.lower().startswith(b"x-mailsync-key:"))
+                            selected_headers += b"\r\n\r\n"
+                            prefix += (b" BODY[HEADER.FIELDS (X-Mailsync-Key)] {" +
+                                       str(len(selected_headers)).encode() + b"}\r\n")
+                            self.wfile.write(prefix + selected_headers + b")\r\n")
                         else:
                             self.wfile.write(prefix + b")\r\n")
                 elif command == "STORE":
