@@ -1,5 +1,16 @@
 # Handoff
 
+## 2026-11-16 — APPENDUID confirmation ready for review
+
+- Branch: `feat/0.002-source-address-labels`. T018 stores a matching `APPENDUID` and skips the follow-up marker search for that write. The 24-hour search remains when the reply has no usable id. Label confirmation on the stored UID is unchanged. 72 application tests passed.
+- T001–T017 are complete, including the 2026-11-16 live label and ten-minute delivery observation. The five-minute timer stays active. Next action: push this branch and open the pull request. Do not reset the baseline or delete live mail.
+
+## 2026-11-16 — T017 complete; branch ready to push
+
+- Branch: `feat/0.002-source-address-labels` in `/home/dfish/IdeaProjects/ImapMailSync`. T001–T017 are complete. The five-minute `mailsync.timer` is enabled and active. The isolated `ImapMailSync-label-dev` worktree and its local implementation branch have been removed; their commits are contained in this branch.
+- Live observation on 2026-11-16: six natural post-feature Yahoo messages were copied once into alpha Inbox with the derived label confirmed by fetch. Arrival-to-confirmation was under ten minutes for each. Later cycles, including 10:10 Eastern, copied zero. Source messages remained present, unread, and not deleted. The pre-feature copy did not receive a label. Gmail aborts a mailbox-wide marker search, so that search was not used as duplicate evidence.
+- The branch is ahead of `origin/feat/0.002-source-address-labels` and has no open pull request. Next action: push this branch and open the pull request. Do not reset the baseline or delete live mail.
+
 ## 2026-11-15 — Source labels deployed; natural-arrival acceptance outstanding
 
 - Branch: `feat/0.002-source-address-labels` in the active checkout `/home/dfish/IdeaProjects/ImapMailSync`, fast-forwarded to `dae2506` before this documentation commit. The five-minute `mailsync.timer` is enabled and active. A fresh private pre-rollout SQLite backup exists with mode 600.

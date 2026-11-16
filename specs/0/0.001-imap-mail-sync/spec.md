@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-15
 
-**Status**: Implemented; live delivery timing remains to be observed
+**Status**: Implemented; live delivery timing observed for natural arrivals on 2026-11-16
 
 **Input**: Copy new mail from source IMAP accounts such as yahoo, delta, and gamma into destination IMAP account alpha, preferably every five minutes. Give each account its own directory under `./accounts` with a Git-ignored `.secrets` directory.
 
@@ -84,7 +84,7 @@ As the operator, I want a clear place for each account's settings and credential
 - **FR-011**: Each cycle MUST report its start and end, per-account outcome, counts of copied, skipped, and failed messages, and enough error context to identify the affected account and message without logging credentials or full message content.
 - **FR-012**: The service MUST not copy messages from alpha back to any source or synchronize deletions, moves, or later flag changes in either direction.
 - **FR-013**: If a source mailbox changes identity or the stored copy history cannot be trusted, the service MUST stop copying from that source and report a recovery action rather than silently replaying or skipping mail.
-- **FR-014**: Each cycle MUST limit source selection and alpha marker reconciliation to messages received in the preceding 24 hours, using IMAP arrival times for exact cutoff checks. It MUST recheck source age immediately before APPEND. It MUST NOT delete messages in either account.
+- **FR-014**: Each cycle MUST limit source selection and alpha marker reconciliation to messages received in the preceding 24 hours, using IMAP arrival times for exact cutoff checks. It MUST recheck source age immediately before APPEND. It MUST NOT delete messages in either account. When alpha's append reply includes `APPENDUID` and that UIDVALIDITY matches the selected Inbox, the service MUST store that destination UID as confirmation of the write and MUST NOT search the mailbox to validate it. A reply with no usable id keeps the 24-hour marker search.
 
 ### Key Entities
 

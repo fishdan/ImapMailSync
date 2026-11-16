@@ -16,6 +16,7 @@ class FakeIMAP:
         self.context = None
         self.commands = []
         self.appended = None
+        self.append_reply = b"APPENDUID 7 17"
 
     def login(self, username, password):
         self.commands.append(("LOGIN", username, password))
@@ -52,7 +53,7 @@ class FakeIMAP:
     def append(self, mailbox, flags, date_time, message):
         self.commands.append(("APPEND", mailbox, flags))
         self.appended = (mailbox, flags, date_time, message)
-        return "OK", [b"APPENDUID 7 17"]
+        return "OK", [self.append_reply]
 
     def logout(self):
         self.commands.append(("LOGOUT",))
@@ -100,6 +101,28 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn(("UID", "SEARCH", (None, "SINCE", "13-Nov-2026", "HEADER",
                                            "X-Mailsync-Key", marker)), self.fake.commands)
         self.assertFalse(any(command[0] in {"STORE", "EXPUNGE"} for command in self.fake.commands))
+
+    def test_matching_appenduid_is_returned_without_another_command(self):
+        destination = Account("alpha", "Test", "dest@test", "password", "imap.example.test", 993)
+        marker = marker_for("yahoo", self.account.identity, 7, 42)
+        with patch("mailsync.imap_client.imaplib.IMAP4_SSL", side_effect=self.factory):
+            with IMAPSession(destination) as session:
+                before = len(self.fake.commands)
+                assigned = session.append_copy(b"From: source@test\r\n\r\nbody", False,
+                                               datetime(2026, 11, 15, 12, tzinfo=timezone.utc), marker)
+        self.assertEqual(assigned, 17)
+        self.assertFalse(any(command[0] == "UID" for command in self.fake.commands[before:]))
+
+    def test_unusable_appenduid_returns_none(self):
+        destination = Account("alpha", "Test", "dest@test", "password", "imap.example.test", 993)
+        marker = marker_for("yahoo", self.account.identity, 7, 42)
+        arrival = datetime(2026, 11, 15, 12, tzinfo=timezone.utc)
+        with patch("mailsync.imap_client.imaplib.IMAP4_SSL", side_effect=self.factory):
+            with IMAPSession(destination) as session:
+                self.fake.append_reply = b"appended"
+                self.assertIsNone(session.append_copy(b"body", False, arrival, marker))
+                self.fake.append_reply = b"APPENDUID 99 17"
+                self.assertIsNone(session.append_copy(b"body", False, arrival, marker))
 
 
 class GmailProtocolTests(unittest.TestCase):

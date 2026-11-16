@@ -225,8 +225,9 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
                             error_code = "AGE_WINDOW_EXPIRED"
                             continue
                         store.begin_label_job(account_id, source.uidvalidity, uid, marker, label)
-                        destination.append_copy(item.raw, item.seen, item.internaldate, marker)
-                        matches = _matches(destination, marker, after_append=True)
+                        assigned = destination.append_copy(item.raw, item.seen, item.internaldate, marker)
+                        matches = ([assigned] if assigned is not None
+                                   else _matches(destination, marker, after_append=True))
                     else:
                         store.begin_label_job(account_id, source.uidvalidity, uid, marker, label)
                     if len(matches) > 1:

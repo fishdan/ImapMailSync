@@ -1,5 +1,18 @@
 # Progress Log
 
+## 2026-11-16 — T018 store APPENDUID without a follow-up search
+
+- A successful alpha append that returns `APPENDUID` for the selected Inbox UIDVALIDITY is now stored as the destination copy id. That write is not checked with a mailbox search or a marker fetch. The label is still confirmed on that stored id. A reply with no usable id, including a UIDVALIDITY that does not match, still uses the existing 24-hour marker search. Lost acknowledgements are unchanged.
+- Validation: `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q` passed 72 tests. No live mailbox was written by this change.
+
+## 2026-11-16 — T017 live label and delivery observation
+
+- The active five-minute timer was enabled. Its 10:10 Eastern cycle succeeded with zero new copies, seven already-copied messages skipped, and zero failures. Private state held seven copy records and six confirmed label jobs. No baseline was reset and no live message was deleted or appended by this check.
+- Read-only Yahoo inspection found all seven copied messages still present, none deleted, and none marked seen. Source UIDVALIDITY matched the stored baseline. Alpha Inbox, selected normally, contained each recorded copy. A fetch of each recorded message found its marker. Each of the six post-feature copies carried the derived source label and no other user label. The one copy made at 9:00 PM Eastern on November 15, before migration 002, had an empty label set.
+- Arrival-to-confirmation time, measured from Yahoo `INTERNALDATE` to the local confirmation time, was 4.58 minutes for the pre-feature copy and 0.59 to 3.68 minutes for the six labeled copies. All seven were inside the ten-minute target. The service journal shows each post-feature cycle copied one message and labeled one, with no pending label, and every later cycle copied zero.
+- Gmail aborted a mailbox-wide `HEADER` search for the marker with `System Error` after about 57 seconds. An `X-GM-RAW` search for the same marker returned no hits, so neither search is evidence of how many copies exist. The no-duplicate result is the repeat-cycle count plus the marker on each recorded copy. Gmail also omitted `\Inbox` from `X-GM-LABELS` for these Inbox messages; Inbox membership was taken from a UID search while Inbox was selected.
+- T017 is complete. The branch remains local, ahead of `origin/feat/0.002-source-address-labels` by the implementation commits, and no pull request is open.
+
 ## 2026-11-15 — Source label production rollout, live arrival pending
 
 - Under operator approval, stopped the five-minute user timer and confirmed the service was inactive. Took a fresh private mode-600 SQLite backup through the SQLite backup API. Fast-forwarded the active `feat/0.002-source-address-labels` checkout to validated implementation commit `dae2506` while the timer was stopped.

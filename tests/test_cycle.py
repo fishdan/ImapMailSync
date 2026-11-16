@@ -42,6 +42,8 @@ class World:
         self.lose_store_ack_once = False
         self.account_wide_absent = False
         self.marker_search_failure = False
+        self.marker_searches = 0
+        self.omit_append_uid = False
 
 
 class FakeSession:
@@ -70,15 +72,20 @@ class FakeSession:
                              False, self.world.internaldate)
 
     def find_marker(self, marker, _cutoff):
+        self.world.marker_searches += 1
         return self.world.destination.get(marker, [])[:]
 
     def append_copy(self, _raw, _seen, _date, marker):
         self.world.append_calls += 1
-        self.world.destination[marker] = [self.world.next_uid]
+        uid = self.world.next_uid
+        self.world.destination[marker] = [uid]
         self.world.next_uid += 1
         if self.world.lose_ack_once:
             self.world.lose_ack_once = False
             raise IMAPError("ACK_LOST")
+        if self.world.omit_append_uid:
+            return None
+        return uid
 
     def supports_labels(self):
         return self.world.capability
@@ -128,6 +135,21 @@ class CycleTests(unittest.TestCase):
     def tearDown(self):
         self.patch.stop()
         self.temp.cleanup()
+
+    def test_appenduid_is_stored_without_followup_search(self):
+        report, code = run_once(self.root)
+        self.assertEqual(code, 0)
+        self.assertEqual(report["accounts"][0]["copied"], 1)
+        self.assertEqual(self.world.marker_searches, 1)
+        with Store(self.root) as store:
+            self.assertEqual(store.copy_record("yahoo", 7, 2)["destination_uid"], 10)
+
+    def test_missing_appenduid_still_uses_followup_search(self):
+        self.world.omit_append_uid = True
+        report, code = run_once(self.root)
+        self.assertEqual(code, 0)
+        self.assertEqual(report["accounts"][0]["copied"], 1)
+        self.assertEqual(self.world.marker_searches, 2)
 
     def test_copies_new_uid_once_and_keeps_history_after_alpha_deletion(self):
         first, first_code = run_once(self.root)

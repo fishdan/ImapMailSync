@@ -46,9 +46,11 @@
 - [x] **T014** Run the full offline unit suite and compilation, then disposable standard IMAP smoke, two-source outage, accepted-copy and label-ack fault cases, three-repeat idempotence, and 100-message throughput. Record commands, counts, and remaining limits in `.config/ai/progress.ai`.
 - [x] **T015** Update `README.md` with the label rule, Gmail capability requirement, private-state migration, pending-label recovery, run/status fields, and upgrade behavior. Align feature docs and progress log; verify no public artifact contains a real address, label, credential, or private path.
 - [x] **T016** Check the packaged wheel includes migration 002; run CI-equivalent tests, `git diff --check`, Git-ignore checks, and staged secret-value scan. Record validation and reviewable handoff in `.config/ai/progress.ai` and `.config/ai/handoff.ai`.
-- [ ] **T017** After disposable gates pass, back up ignored production state, inspect timer status, verify migration preserves source baselines, run read-only alpha capability preflight, and observe a naturally arriving future message through the active five-minute timer. Record whether the live label and ten-minute delivery criteria were actually observed; do not claim them from disposable tests alone.
+- [x] **T017** After disposable gates pass, back up ignored production state, inspect timer status, verify migration preserves source baselines, run read-only alpha capability preflight, and observe a naturally arriving future message through the active five-minute timer. Record whether the live label and ten-minute delivery criteria were actually observed; do not claim them from disposable tests alone.
 
-  Rollout, migration verification, doctor, and first scheduled-cycle observation passed on 2026-11-15. A natural post-feature source arrival has not yet occurred, so the live label and ten-minute delivery checks remain open.
+  Rollout, migration verification, doctor, and the first scheduled cycle passed on 2026-11-15. On 2026-11-16, six natural post-feature Yahoo arrivals were copied by the active timer. Read-only checks found each alpha copy in Inbox with its derived label, source messages still present and unread, and arrival-to-confirmation times from 0.59 to 3.68 minutes. Repeat cycles copied zero. The one pre-feature copy stayed unlabeled. Gmail aborted a mailbox-wide marker search, so the no-duplicate result comes from those repeat cycles and a marker fetch of each recorded copy.
+
+- [x] **T018** Store a matching `APPENDUID` as the destination copy id and do not search or fetch to validate that write. Keep the 24-hour marker search when the append reply has no usable id. Label confirmation on the stored UID stays unchanged.
 
 ## Dependencies and execution order
 

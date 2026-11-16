@@ -22,6 +22,7 @@ Indexes support scanning `pending` jobs by account and counting pending/missing 
 no job (legacy or not attempted)
     └─ before a post-feature APPEND → pending, UID unknown
 pending, UID unknown
+    ├─ APPENDUID for the current UIDVALIDITY → pending, UID known, no follow-up search
     ├─ one marker match → pending, UID known
     ├─ no marker match while source eligible → APPEND/reconcile
     └─ no marker match after source ages out → expired; no APPEND

@@ -16,6 +16,8 @@ UID = re.compile(rb"\bUID (\d+)\b")
 FLAGS = re.compile(rb"\bFLAGS \(([^)]*)\)")
 INTERNALDATE = re.compile(rb'\bINTERNALDATE "([^"]+)"')
 MARKER = re.compile(r"^ms1-[a-f0-9]{64}$")
+APPENDUID_CODE = re.compile(rb"^(\d+) (\d+)$")
+APPENDUID_TEXT = re.compile(rb"APPENDUID (\d+) (\d+)")
 
 
 class IMAPError(Exception):
@@ -146,14 +148,37 @@ class IMAPSession:
                 matches.append(uid)
         return matches
 
-    def append_copy(self, raw: bytes, seen: bool, internaldate: datetime, marker: str) -> None:
+    def append_copy(self, raw: bytes, seen: bool, internaldate: datetime, marker: str) -> int | None:
+        """Append one copy. Return its UID when the reply proves this Inbox stored it."""
         if self.account.role != "destination" or not MARKER.fullmatch(marker):
             raise IMAPError("INVALID_DESTINATION_APPEND")
         marked = b"X-Mailsync-Key: " + marker.encode("ascii") + b"\r\n" + raw
         flags = r"(\Seen)" if seen else None
-        status, _ = self.client.append("INBOX", flags, internaldate, marked)
+        status, data = self.client.append("INBOX", flags, internaldate, marked)
         if status != "OK":
             raise IMAPError("DESTINATION_APPEND_FAILED")
+        return self._append_uid(data)
+
+    def _append_uid(self, data) -> int | None:
+        payloads = []
+        try:
+            _name, values = self.client.response("APPENDUID")
+        except (imaplib.IMAP4.error, OSError, TypeError, ValueError):
+            values = None
+        if values:
+            payloads.extend(values)
+        if data:
+            payloads.extend(data)
+        for payload in payloads:
+            if not isinstance(payload, bytes):
+                continue
+            match = APPENDUID_CODE.match(payload.strip()) or APPENDUID_TEXT.search(payload)
+            if not match:
+                continue
+            uidvalidity, uid = int(match.group(1)), int(match.group(2))
+            if uidvalidity == self.uidvalidity and uid > 0:
+                return uid
+        return None
 
     def supports_labels(self) -> bool:
         if self.account.role != "destination":

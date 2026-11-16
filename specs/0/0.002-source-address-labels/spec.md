@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-15
 
-**Status**: Deployed; natural-arrival label and timing acceptance pending
+**Status**: Accepted; live label and ten-minute delivery observed 2026-11-16
 
 **Input**: Label every message copied into alpha after this feature is enabled with the source email address minus its final `.ext` suffix. For example, mail copied from `person@yahoo.com` receives the Gmail label `person@yahoo`.
 
@@ -75,6 +75,7 @@ As the operator, I want each configured source address to produce its own label 
 - **FR-008**: If alpha is known not to support user labels before a copy begins, the service MUST skip new copies and report the capability failure. A label failure discovered after a copy was accepted MUST leave that copy pending and MUST NOT be treated as complete.
 - **FR-009**: Source credentials and message content MUST NOT be disclosed in label-operation output or logs. The derived label is destination metadata, not a new message header or a modification to the source message.
 - **FR-010**: Recovery of an already accepted destination copy MUST retry its missing label until the label is confirmed or the copy is verified absent from alpha, even after 24 hours. A temporary connection failure MUST leave the label pending. Recovery MAY inspect only that specific recorded copy by its destination UID or stable marker; it MUST NOT broadly scan or import unrelated old mail in either account. This operator-approved exception to feature 0.001's alpha inspection window does not extend the 24-hour source-copy cutoff.
+- **FR-011**: When alpha's append reply includes `APPENDUID` and its UIDVALIDITY matches the selected Inbox, the service MUST store that destination UID and MUST NOT search or fetch to validate that write. Label confirmation on the stored UID remains required. A reply with no usable id MUST use the existing 24-hour marker search.
 
 ### Key Entities
 
