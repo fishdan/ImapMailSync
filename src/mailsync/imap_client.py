@@ -59,6 +59,11 @@ class IMAPSession:
             self.client.logout()
         except (imaplib.IMAP4.error, OSError):
             pass
+        finally:
+            try:
+                self.client.shutdown()
+            except (AttributeError, imaplib.IMAP4.error, OSError):
+                pass
 
     def _response_integer(self, name: str) -> int:
         _, values = self.client.response(name)

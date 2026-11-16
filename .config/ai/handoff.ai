@@ -1,5 +1,11 @@
 # Handoff
 
+## 2026-11-15 — Feature ready for coordinated production rollout
+
+- Branch: `feat/0.002-source-address-labels-impl` in `/home/dfish/IdeaProjects/ImapMailSync-label-dev`; original checkout at `/home/dfish/IdeaProjects/ImapMailSync` remains the active feature-0.001 service path. T001–T016 are complete. The final staged private-value scan passed. Do not copy code into the active checkout while its timer can start a cycle.
+- Validation: 68 application tests (46.84 seconds), 9 imapsync probe tests, compilation, wheel with migration 002 and extracted version-2 initialization, whitespace check, and Git-ignore check passed. Disposable integration includes 100 labeled messages, three repeat cycles, source outage, and lost acknowledgement faults. No real label write or live state migration occurred.
+- Next: T017. Back up active ignored state, check timer, rehearse migration against the backup, and run read-only alpha capability preflight. Coordinate the final code switch with the timer paused, then observe natural future mail. Record live evidence separately from disposable evidence.
+
 ## 2026-11-15 — Label feature implementation ready for disposable validation
 
 - Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T013 are complete. `doctor`, `run-once`, and `status` include sanitized label checks and counts; the original checkout still runs feature 0.001 under the active timer.

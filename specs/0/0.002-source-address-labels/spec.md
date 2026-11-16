@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-15
 
-**Status**: Planned; implementation pending
+**Status**: Implemented in isolated worktree; disposable validation passed; production rollout pending
 
 **Input**: Label every message copied into alpha after this feature is enabled with the source email address minus its final `.ext` suffix. For example, mail copied from `person@yahoo.com` receives the Gmail label `person@yahoo`.
 

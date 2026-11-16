@@ -1,5 +1,11 @@
 # Progress Log
 
+## 2026-11-15 — T014–T016 disposable and packaging gates
+
+- Added a localhost IMAP end-to-end suite using the real cycle and `imaplib` protocol methods. It verifies labels on two sources, age cutoff, source flag preservation, three zero-copy repeats, one-source outage recovery, lost APPEND/STORE acknowledgements with after-24-hour repair, and a 100-message batch. The batch yielded 100 labeled Inbox copies with zero duplicate copies on repeat; the 68-test application suite completed in 46.84 seconds. No real provider was used.
+- Updated README and feature status with the label rule, Gmail capability, migration, pending repair, reporting, and pre-feature copy boundary. The isolated wheel build contained `002_label_jobs.sql`, and an extracted wheel initialized schema version 2. The 9 imapsync probe tests, Python compilation, and `git diff --check` passed. Git ignore rules cover private account JSON and SQLite state. Private-value scans found zero matches in 95 tracked files and seven staged files.
+- Remaining limit: provider label behavior has only a read-only capability check, not a live label write or natural-arrival observation. T017 production backup, preflight, and rollout observation remain. No new runtime dependency was added; the 2026-11-15 dependency review remains current.
+
 ## 2026-11-15 — T012–T013 operational label reporting
 
 - Added failing CLI and multi-source tests, then `doctor` source-address validation and read-only Gmail capability reporting, `run-once` labeled/pending counts with affected source UIDs, and local `status` pending/missing counts. Error codes now match the feature CLI contract. Text and JSON output omit addresses, label values, credentials, IMAP responses, and message content.
