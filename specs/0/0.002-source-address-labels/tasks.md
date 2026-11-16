@@ -38,8 +38,8 @@
 
 **Independent test**: Two synthetic source addresses produce correctly labeled Inbox copies; one source label failure leaves its UID visible while the other succeeds.
 
-- [ ] **T012 [US3]** Write failing multi-source and CLI tests in `tests/test_cycle.py` and `tests/test_cli.py`: source-specific derivation, healthy-source isolation, pending/missing counts, `issue_uids`, sanitized errors, and `doctor` capability/address checks with no writes.
-- [ ] **T013 [US3]** Implement `doctor`, `run-once`, `status`, and text/JSON report changes in `src/mailsync/cli.py` and `src/mailsync/cycle.py`; pass T012. Keep addresses, label text, raw IMAP responses, credentials, and message content out of output.
+- [x] **T012 [US3]** Write failing multi-source and CLI tests in `tests/test_cycle.py` and `tests/test_cli.py`: source-specific derivation, healthy-source isolation, pending/missing counts, `issue_uids`, sanitized errors, and `doctor` capability/address checks with no writes.
+- [x] **T013 [US3]** Implement `doctor`, `run-once`, `status`, and text/JSON report changes in `src/mailsync/cli.py` and `src/mailsync/cycle.py`; pass T012. Keep addresses, label text, raw IMAP responses, credentials, and message content out of output.
 
 ## Phase 5: Validation and rollout
 

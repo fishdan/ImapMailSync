@@ -154,6 +154,14 @@ class Store:
         return [dict(row) for row in self.db.execute(
             query + " ORDER BY account_id, created_at, source_uid", args)]
 
+    def label_counts(self, account_id: str) -> dict[str, int]:
+        counts = {"pending_labels": 0, "missing_labels": 0}
+        for row in self.db.execute(
+                "SELECT status, COUNT(*) FROM label_jobs WHERE account_id=? "
+                "AND status IN ('pending','missing') GROUP BY status", (account_id,)):
+            counts[f"{row[0]}_labels"] = int(row[1])
+        return counts
+
     def begin_label_job(self, account_id: str, uidvalidity: int, source_uid: int,
                         marker: str, label_name: str) -> None:
         """Commit attempt and immutable job together, before any destination APPEND."""

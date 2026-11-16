@@ -85,7 +85,7 @@ class FakeSession:
 
     def ensure_label(self, label):
         if not self.world.capability:
-            raise IMAPError("LABEL_CAPABILITY_UNAVAILABLE")
+            raise IMAPError("LABEL_UNSUPPORTED")
         self.world.existing_labels.add(label)
 
     def labels_for_uid(self, uid):
@@ -177,15 +177,28 @@ class CycleTests(unittest.TestCase):
         report, code = run_once(self.root)
         outcomes = {item["account_id"]: item for item in report["accounts"]}
         self.assertEqual(code, 1)
-        self.assertEqual(outcomes["delta"]["error_code"], "INVALID_SOURCE_ADDRESS")
+        self.assertEqual(outcomes["delta"]["error_code"], "INVALID_LABEL_ADDRESS")
         self.assertEqual(outcomes["yahoo"]["labeled"], 1)
         self.assertEqual(self.world.append_calls, 1)
+
+    def test_two_sources_receive_their_own_labels(self):
+        account(self.root, "delta")
+        with Store(self.root) as store:
+            store.init_baseline("delta", load_account(self.root, "delta").identity,
+                                load_account(self.root, "alpha").identity, 7, 2)
+        report, code = run_once(self.root)
+        self.assertEqual(code, 0)
+        outcomes = {item["account_id"]: item for item in report["accounts"]}
+        self.assertEqual(outcomes["delta"]["labeled"], 1)
+        self.assertEqual(outcomes["yahoo"]["labeled"], 1)
+        self.assertEqual(self.world.labels[10], {"delta@example"})
+        self.assertEqual(self.world.labels[11], {"yahoo@example"})
 
     def test_unsupported_capability_and_invalid_address_prevent_append(self):
         self.world.capability = False
         report, code = run_once(self.root)
         self.assertEqual(code, 1)
-        self.assertEqual(report["accounts"][0]["error_code"], "LABEL_CAPABILITY_UNAVAILABLE")
+        self.assertEqual(report["accounts"][0]["error_code"], "LABEL_UNSUPPORTED")
         self.assertEqual(self.world.append_calls, 0)
         self.world.capability = True
         path = self.root / "accounts/yahoo/.secrets/account.json"

@@ -1,5 +1,10 @@
 # Handoff
 
+## 2026-11-15 — Label feature implementation ready for disposable validation
+
+- Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T013 are complete. `doctor`, `run-once`, and `status` include sanitized label checks and counts; the original checkout still runs feature 0.001 under the active timer.
+- 64 application tests passed. Next: T014 disposable end-to-end/fault/100-message gates, T015 documentation, T016 packaging/security checks, then T017 coordinated production state backup and rollout observation. No live label operation or migration has occurred.
+
 ## 2026-11-15 — Pending-copy repair in isolated worktree
 
 - Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T011 are complete. The original checkout continues to serve the active production timer with feature 0.001 code.

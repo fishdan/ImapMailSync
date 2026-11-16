@@ -122,7 +122,7 @@ class GmailProtocolTests(unittest.TestCase):
                 with IMAPSession(self.account("alpha")) as destination:
                     with self.assertRaises(IMAPError) as caught:
                         destination.ensure_label("source/example")
-            self.assertEqual(str(caught.exception), "LABEL_CAPABILITY_UNAVAILABLE")
+            self.assertEqual(str(caught.exception), "LABEL_UNSUPPORTED")
             self.assertIn("SELECT INBOX", fixture.commands)
             self.assertFalse(any(command.startswith("CREATE") for command in fixture.commands))
 

@@ -1,5 +1,10 @@
 # Progress Log
 
+## 2026-11-15 — T012–T013 operational label reporting
+
+- Added failing CLI and multi-source tests, then `doctor` source-address validation and read-only Gmail capability reporting, `run-once` labeled/pending counts with affected source UIDs, and local `status` pending/missing counts. Error codes now match the feature CLI contract. Text and JSON output omit addresses, label values, credentials, IMAP responses, and message content.
+- Validation: 64 application tests passed with `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q`. The active service path has not loaded the isolated worktree implementation. T014 disposable scenario validation is next.
+
 ## 2026-11-15 — T009–T011 pending-copy label recovery
 
 - Added test-first recovery for accepted copies with missing labels. Pending jobs run before source access and attempt age expiration. Saved destination UID and exact marker evidence are checked before labeling; a stale UID is reconciled to the verified marker. Accepted copies can be labeled after 24 hours and during a source outage without another APPEND. Lost STORE acknowledgement is resolved by FETCH before retry.

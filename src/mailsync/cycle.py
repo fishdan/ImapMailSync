@@ -106,10 +106,10 @@ def _repair_pending(store: Store, destination: IMAPSession, account_id: str,
                     target = matches[0]
                 elif job["destination_uid"] is not None:
                     if destination.copy_absent_account_wide(job["marker"]):
-                        store.set_label_status(*key, "missing", "DESTINATION_COPY_MISSING")
+                        store.set_label_status(*key, "missing", "LABEL_COPY_MISSING")
                         missing += 1
                         issue_uids.add(uid)
-                        error_code = "DESTINATION_COPY_MISSING"
+                        error_code = "LABEL_COPY_MISSING"
                     else:
                         store.set_label_status(*key, "pending", "DESTINATION_COPY_INACCESSIBLE")
                         pending += 1
@@ -157,7 +157,7 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
     try:
         label = derive_source_label(source_account.username)
     except LabelError:
-        return _result(account_id, "failed", failed=1, error_code="INVALID_SOURCE_ADDRESS")
+        return _result(account_id, "failed", failed=1, error_code="INVALID_LABEL_ADDRESS")
     try:
         destination.ensure_label(label)
     except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError) as exc:

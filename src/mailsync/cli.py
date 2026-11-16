@@ -12,6 +12,7 @@ from .baseline import initialize
 from .config import discover_accounts
 from .cycle import run_once
 from .imap_client import IMAPError, IMAPSession
+from .labels import LabelError, derive_source_label
 from .state import StateError, Store
 
 
@@ -24,7 +25,9 @@ def _show(report: dict, as_json: bool) -> None:
         print(f"error={report['error_code']}")
     for baseline in report.get("baselines", []):
         print(f"account={baseline['account_id']} baseline_status={baseline['status']} "
-              f"first_eligible_uid={baseline['first_eligible_uid']}")
+              f"first_eligible_uid={baseline['first_eligible_uid']} "
+              f"pending_labels={baseline.get('pending_labels', 0)} "
+              f"missing_labels={baseline.get('missing_labels', 0)}")
     latest = report.get("latest_cycle")
     if latest:
         print(f"latest_cycle={latest['cycle_id']} status={latest['status']} "
@@ -35,7 +38,8 @@ def _show(report: dict, as_json: bool) -> None:
                   f"error={item['error_code'] or 'none'}")
     for item in report.get("accounts", []):
         parts = [f"account={item['account_id']}", f"status={item['status']}"]
-        for key in ("copied", "skipped", "failed", "error_code", "issue_uids"):
+        for key in ("copied", "skipped", "failed", "labeled", "label_pending",
+                    "error_code", "issue_uids"):
             if key in item:
                 parts.append(f"{key}={item[key]}")
         print(" ".join(parts))
@@ -49,9 +53,20 @@ def doctor(root: Path) -> tuple[dict, int]:
     for account_id, code in sorted(errors.items()):
         results.append({"account_id": account_id, "status": "failed", "error_code": code})
     for account_id, account in sorted(accounts.items()):
+        if account.role == "source":
+            try:
+                derive_source_label(account.username)
+            except LabelError:
+                results.append({"account_id": account_id, "status": "failed",
+                                "error_code": "INVALID_LABEL_ADDRESS"})
+                continue
         try:
-            with IMAPSession(account):
-                results.append({"account_id": account_id, "status": "success"})
+            with IMAPSession(account) as session:
+                if account.role == "destination" and not session.supports_labels():
+                    results.append({"account_id": account_id, "status": "failed",
+                                    "error_code": "LABEL_UNSUPPORTED"})
+                else:
+                    results.append({"account_id": account_id, "status": "success"})
         except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError):
             results.append({"account_id": account_id, "status": "failed", "error_code": "IMAP_CONNECTION_FAILED"})
     status = "success" if all(item["status"] == "success" for item in results) else "failed"
@@ -83,6 +98,8 @@ def status(root: Path) -> tuple[dict, int]:
         with Store(root) as store:
             latest = store.latest_cycle()
             baselines = store.baselines()
+            for baseline in baselines:
+                baseline.update(store.label_counts(baseline["account_id"]))
         return {"status": "success", "baselines": baselines, "latest_cycle": latest}, 0
     except (StateError, sqlite3.DatabaseError) as exc:
         return {"status": "failed", "error_code": str(exc) if isinstance(exc, StateError)

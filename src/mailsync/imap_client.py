@@ -158,7 +158,7 @@ class IMAPSession:
 
     def ensure_label(self, label: str) -> None:
         if self.account.role != "destination" or not self.supports_labels():
-            raise IMAPError("LABEL_CAPABILITY_UNAVAILABLE")
+            raise IMAPError("LABEL_UNSUPPORTED")
         try:
             encoded = encode_imap_label(label)
         except LabelError as exc:
