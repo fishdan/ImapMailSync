@@ -19,8 +19,8 @@
 
 - [x] **T005 [US1]** Write failing protocol tests in `tests/test_imap_client.py` using T001: capability gate, read-write destination/read-only source selection, label LIST/CREATE/reuse, additive `UID STORE`, exact UID label FETCH, and safe parsing/quoting.
 - [x] **T006 [US1]** Implement Gmail label operations and exact marker/UID verification in `src/mailsync/imap_client.py`, using `src/mailsync/labels.py` for encoding; pass T005. Do not issue delete, expunge, move, or flag STORE.
-- [ ] **T007 [US1]** Write failing cycle tests in `tests/test_cycle.py` for job creation before APPEND, one new copy and confirmed label, existing label reuse, prior feature-0.001 copy untouched, invalid source address isolation, and unsupported alpha capability preventing new APPEND.
-- [ ] **T008 [US1]** Integrate derivation, capability, job creation, APPEND reconciliation, label application, and confirmation in `src/mailsync/cycle.py`; pass T007 and preserve exact 24-hour source cutoff.
+- [x] **T007 [US1]** Write failing cycle tests in `tests/test_cycle.py` for job creation before APPEND, one new copy and confirmed label, existing label reuse, prior feature-0.001 copy untouched, invalid source address isolation, and unsupported alpha capability preventing new APPEND.
+- [x] **T008 [US1]** Integrate derivation, capability, job creation, APPEND reconciliation, label application, and confirmation in `src/mailsync/cycle.py`; pass T007 and preserve exact 24-hour source cutoff.
 
 ## Phase 3: User Story 2 — Repair interrupted labels (P2)
 

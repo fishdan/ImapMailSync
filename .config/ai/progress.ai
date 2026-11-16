@@ -1,5 +1,10 @@
 # Progress Log
 
+## 2026-11-15 — T007–T008 labeled new copies
+
+- Added failing cycle tests, then connected source-address validation, destination label preparation, atomic job creation before APPEND, existing marker reconciliation, exact destination UID label confirmation, and pending-label reporting. Prior feature-0.001 copy records are left without jobs. Invalid source address or missing Gmail capability blocks new APPEND for that source; healthy sources continue.
+- Validation: 52 application tests passed with `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q`. Tests cover one labeled copy, label reuse without disturbing another label, legacy-copy exclusion, invalid-address isolation, capability gate, label failure visibility, and the existing 24-hour source cutoff. Production timer still points to the original checkout; no live label operation occurred.
+
 ## 2026-11-15 — T005–T006 Gmail label protocol
 
 - Added failing wire-level tests against the disposable `imaplib` fixture, then implemented read-write destination selection, a `X-GM-EXT-1` capability gate, exact label LIST/CREATE/reuse, additive `UID STORE +X-GM-LABELS`, exact UID label FETCH and parsing, and targeted marker search/UID header verification. Source selection stays read only. The fixture now serves header-only UID FETCH for marker verification.

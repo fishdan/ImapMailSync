@@ -13,6 +13,7 @@ import time
 from .baseline import eligible_uids, marker_for, within_24_hours
 from .config import Account, discover_accounts
 from .imap_client import IMAPError, IMAPSession
+from .labels import LabelError, derive_source_label
 from .state import StateError, Store, utc_now
 
 
@@ -47,9 +48,11 @@ def process_lock(root: Path):
 
 def _result(account_id: str, status: str, copied: int = 0, skipped: int = 0,
             failed: int = 0, error_code: str | None = None,
-            issue_uids: set[int] | None = None) -> dict:
+            issue_uids: set[int] | None = None, labeled: int = 0,
+            label_pending: int = 0) -> dict:
     result = {"account_id": account_id, "status": status, "copied": copied,
-              "skipped": skipped, "failed": failed}
+              "skipped": skipped, "failed": failed, "labeled": labeled,
+              "label_pending": label_pending}
     if error_code:
         result["error_code"] = error_code
     if issue_uids:
@@ -66,6 +69,16 @@ def _matches(destination: IMAPSession, marker: str, *, after_append: bool = Fals
     return []
 
 
+def _confirm_label(store: Store, destination: IMAPSession, account_id: str,
+                   source_uidvalidity: int, source_uid: int, destination_uid: int,
+                   label: str) -> None:
+    if label not in destination.labels_for_uid(destination_uid):
+        destination.add_label(destination_uid, label)
+    if label not in destination.labels_for_uid(destination_uid):
+        raise IMAPError("LABEL_UNCONFIRMED")
+    store.set_label_status(account_id, source_uidvalidity, source_uid, "confirmed")
+
+
 def _sync_source(store: Store, source_account: Account, destination_account: Account,
                  destination: IMAPSession) -> dict:
     account_id = source_account.account_id
@@ -78,7 +91,17 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
             or baseline["destination_identity"] != destination_account.identity):
         store.block_source(account_id)
         return _result(account_id, "blocked", failed=1, error_code="ACCOUNT_IDENTITY_CHANGED")
+    try:
+        label = derive_source_label(source_account.username)
+    except LabelError:
+        return _result(account_id, "failed", failed=1, error_code="INVALID_SOURCE_ADDRESS")
+    try:
+        destination.ensure_label(label)
+    except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError) as exc:
+        code = str(exc) if isinstance(exc, IMAPError) else "LABEL_PREPARE_FAILED"
+        return _result(account_id, "failed", failed=1, error_code=code)
     copied = skipped = failed = 0
+    labeled = label_pending = 0
     error_code = None
     expired_now = store.expire_old_attempts(account_id, baseline["uidvalidity"],
                                             datetime.now(timezone.utc) - timedelta(hours=24))
@@ -99,6 +122,7 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
             for uid in selected:
                 marker = marker_for(account_id, source_account.identity, source.uidvalidity, uid)
                 try:
+                    previous_attempt = store.attempt(account_id, source.uidvalidity, uid)
                     store.begin_attempt(account_id, source.uidvalidity, uid, marker)
                     item = source.fetch(uid)
                     if not within_24_hours(item.internaldate, datetime.now(timezone.utc)):
@@ -116,6 +140,12 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
                         issue_uids.add(uid)
                         return _result(account_id, "blocked", copied, skipped, failed + 1,
                                        "MULTIPLE_MARKER_MATCHES", issue_uids)
+                    if previous_attempt and not store.label_job(account_id, source.uidvalidity, uid) and matches:
+                        store.confirm(account_id, source.uidvalidity, uid, marker,
+                                      destination.uidvalidity, matches[0])
+                        copied += 1  # Pre-feature accepted copy: no backfill label job.
+                        continue
+                    store.begin_label_job(account_id, source.uidvalidity, uid, marker, label)
                     if not matches:
                         if not within_24_hours(item.internaldate, datetime.now(timezone.utc)):
                             store.mark_failed(account_id, source.uidvalidity, uid, "AGE_WINDOW_EXPIRED")
@@ -140,6 +170,18 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
                     store.confirm(account_id, source.uidvalidity, uid, marker,
                                   destination.uidvalidity, matches[0])
                     copied += 1
+                    try:
+                        _confirm_label(store, destination, account_id, source.uidvalidity,
+                                       uid, matches[0], label)
+                        labeled += 1
+                    except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError):
+                        store.set_label_status(account_id, source.uidvalidity, uid,
+                                               "pending", "LABEL_UNCONFIRMED")
+                        issue_uids.add(uid)
+                        label_pending += 1
+                        failed += 1
+                        error_code = "LABEL_UNCONFIRMED"
+                        break
                 except (IMAPError, imaplib.IMAP4.error, OSError, ssl.SSLError, TimeoutError):
                     store.mark_uncertain(account_id, source.uidvalidity, uid, "TRANSFER_UNCERTAIN")
                     issue_uids.add(uid)
@@ -155,7 +197,7 @@ def _sync_source(store: Store, source_account: Account, destination_account: Acc
         failed += 1
         error_code = "SOURCE_UNAVAILABLE"
     return _result(account_id, "failed" if failed else "success", copied, skipped, failed,
-                   error_code, issue_uids)
+                   error_code, issue_uids, labeled, label_pending)
 
 
 def run_once(root: Path) -> tuple[dict, int]:

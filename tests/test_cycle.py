@@ -18,7 +18,7 @@ def account(root: Path, name: str) -> None:
     secret.chmod(0o700)
     path = secret / "account.json"
     path.write_text(json.dumps({
-        "provider": "Test", "username": name, "password": "test-password",
+        "provider": "Test", "username": f"{name}@example.test", "password": "test-password",
         "imap": {"host": "localhost", "port": 993, "security": "SSL/TLS", "authenticationRequired": True},
     }))
     path.chmod(0o600)
@@ -34,6 +34,11 @@ class World:
         self.unavailable = set()
         self.uidvalidity = {"yahoo": 7, "delta": 7, "alpha": 7}
         self.internaldate = datetime.now(timezone.utc) - timedelta(hours=1)
+        self.labels = {}
+        self.existing_labels = set()
+        self.capability = True
+        self.label_failure = False
+        self.label_store_calls = 0
 
 
 class FakeSession:
@@ -72,6 +77,29 @@ class FakeSession:
             self.world.lose_ack_once = False
             raise IMAPError("ACK_LOST")
 
+    def supports_labels(self):
+        return self.world.capability
+
+    def ensure_label(self, label):
+        if not self.world.capability:
+            raise IMAPError("LABEL_CAPABILITY_UNAVAILABLE")
+        self.world.existing_labels.add(label)
+
+    def labels_for_uid(self, uid):
+        return self.world.labels.get(uid, set()).copy()
+
+    def add_label(self, uid, label):
+        self.world.label_store_calls += 1
+        if self.world.label_failure:
+            raise IMAPError("LABEL_STORE_FAILED")
+        self.world.labels.setdefault(uid, set()).add(label)
+
+    def marker_at_uid(self, uid, marker):
+        return uid in self.world.destination.get(marker, [])
+
+    def find_marker_exact(self, marker):
+        return self.world.destination.get(marker, [])[:]
+
 
 class CycleTests(unittest.TestCase):
     def setUp(self):
@@ -100,6 +128,72 @@ class CycleTests(unittest.TestCase):
         third, third_code = run_once(self.root)
         self.assertEqual((third_code, third["accounts"][0]["copied"]), (0, 0))
         self.assertEqual(self.world.append_calls, 1)
+
+    def test_new_copy_gets_derived_label_and_prior_copy_is_untouched(self):
+        with Store(self.root) as store:
+            store.begin_attempt("yahoo", 7, 3, "ms1-legacy")
+            store.confirm("yahoo", 7, 3, "ms1-legacy", 7, 99)
+        self.world.source_uids["yahoo"] = [2, 3]
+        report, code = run_once(self.root)
+        self.assertEqual(code, 0)
+        uid = next(iter(self.world.labels))
+        self.assertEqual(self.world.labels[uid], {"yahoo@example"})
+        self.assertEqual(report["accounts"][0]["labeled"], 1)
+        with Store(self.root) as store:
+            self.assertEqual(store.label_job("yahoo", 7, 2)["status"], "confirmed")
+            self.assertIsNone(store.label_job("yahoo", 7, 3))
+
+    def test_existing_label_reused_and_unrelated_label_preserved(self):
+        self.world.existing_labels.add("yahoo@example")
+        self.world.labels[10] = {"personal"}
+        first, code = run_once(self.root)
+        second, second_code = run_once(self.root)
+        self.assertEqual((code, second_code), (0, 0))
+        self.assertEqual(first["accounts"][0]["labeled"], 1)
+        self.assertEqual(self.world.labels[10], {"personal", "yahoo@example"})
+        self.assertEqual(self.world.label_store_calls, 1)
+        self.assertEqual(self.world.append_calls, 1)
+
+    def test_invalid_source_address_isolated_from_healthy_source(self):
+        account(self.root, "delta")
+        path = self.root / "accounts/delta/.secrets/account.json"
+        data = json.loads(path.read_text())
+        data["username"] = "invalid-address"
+        path.write_text(json.dumps(data))
+        with Store(self.root) as store:
+            store.init_baseline("delta", load_account(self.root, "delta").identity,
+                                load_account(self.root, "alpha").identity, 7, 2)
+        report, code = run_once(self.root)
+        outcomes = {item["account_id"]: item for item in report["accounts"]}
+        self.assertEqual(code, 1)
+        self.assertEqual(outcomes["delta"]["error_code"], "INVALID_SOURCE_ADDRESS")
+        self.assertEqual(outcomes["yahoo"]["labeled"], 1)
+        self.assertEqual(self.world.append_calls, 1)
+
+    def test_unsupported_capability_and_invalid_address_prevent_append(self):
+        self.world.capability = False
+        report, code = run_once(self.root)
+        self.assertEqual(code, 1)
+        self.assertEqual(report["accounts"][0]["error_code"], "LABEL_CAPABILITY_UNAVAILABLE")
+        self.assertEqual(self.world.append_calls, 0)
+        self.world.capability = True
+        path = self.root / "accounts/yahoo/.secrets/account.json"
+        data = json.loads(path.read_text())
+        data["username"] = "invalid"
+        path.write_text(json.dumps(data))
+        report, code = run_once(self.root)
+        self.assertEqual(code, 3)  # Identity protection blocks the changed account.
+        self.assertEqual(self.world.append_calls, 0)
+
+    def test_label_failure_reports_pending_without_duplicate_append(self):
+        self.world.label_failure = True
+        report, code = run_once(self.root)
+        self.assertEqual(code, 1)
+        self.assertEqual(report["accounts"][0]["label_pending"], 1)
+        self.assertEqual(report["accounts"][0]["issue_uids"], [2])
+        self.assertEqual(self.world.append_calls, 1)
+        with Store(self.root) as store:
+            self.assertEqual(store.label_job("yahoo", 7, 2)["status"], "pending")
 
     def test_lost_ack_is_reconciled_before_retry(self):
         self.world.lose_ack_once = True

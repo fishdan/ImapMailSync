@@ -1,5 +1,10 @@
 # Handoff
 
+## 2026-11-15 — New-copy labeling path in isolated worktree
+
+- Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T008 are complete. The original checkout remains the production service path and has not loaded migration 002.
+- New copies are labeled and confirmed in disposable cycle tests; pending-label repair after age-out and source outage is next (T009–T011). 52 application tests passed. No live provider or state changed.
+
 ## 2026-11-15 — Gmail protocol operations in isolated worktree
 
 - Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T006 are complete. The active production checkout remains unchanged beyond the T001 test fixture commit and still runs feature 0.001.
