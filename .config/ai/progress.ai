@@ -1,5 +1,11 @@
 # Progress Log
 
+## 2026-11-15 — T001 disposable Gmail-extension IMAP fixture
+
+- Added a localhost-only, synthetic IMAP fixture with `X-GM-EXT-1` capability, LIST/CREATE, Inbox APPEND and UID marker search, exact UID label FETCH, and additive UID STORE. It supports one-shot command rejection, connection loss, and lost acknowledgements after accepted APPEND or STORE. No real provider or account was touched.
+- Added wire-level `imaplib` tests for label creation/reuse, exact UID label read and write, marker lookup, read-only rejection, capability absence, and fault behavior. The existing CI application-test discovery runs these tests without a service dependency; the feature quickstart records this.
+- Validation: `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q` passed 35 tests; `python3 -m compileall -q src tests` and `git diff --check` passed. T001 is complete; T002 label derivation and encoding tests are next. The 2026-11-15 monthly dependency review remains current, and no dependency was added.
+
 ## 2026-11-15 — Source address labels plan and tasks
 
 - Completed the planning phase for feature `0.002-source-address-labels` on `feat/0.002-source-address-labels`. Added `plan.md`, `research.md`, `data-model.md`, `contracts/cli.md`, `quickstart.md`, and `tasks.md` with 17 ordered tasks. The spec now records `Planned; implementation pending`.

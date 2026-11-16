@@ -1,5 +1,11 @@
 # Handoff
 
+## 2026-11-15 — T001 protocol fixture complete
+
+- Branch: `feat/0.002-source-address-labels`. T001 is complete with `tests/gmail_imap_fixture.py` and `tests/test_gmail_imap_fixture.py`; it uses only synthetic mail and localhost `imaplib` connections. The feature remains unimplemented in production code, and no live labels or state changed.
+- Validation: 35 application tests passed, Python compilation passed, and `git diff --check` passed. No new dependency was added. The fixture is part of existing CI test discovery.
+- Next task: T002 failing label derivation and safe IMAP encoding tests, followed by T003 migration/job transition tests and T004 implementation. The five-minute production timer remains in its feature-0.001 state.
+
 ## 2026-11-15 — Source address labels planned
 
 - Branch: `feat/0.002-source-address-labels`. Feature spec and checklist are complete; plan, research, data model, CLI contract, quickstart, and 17 implementation tasks are present under `specs/0/0.002-source-address-labels/`. No production code, private account configuration, SQLite state, or live labels changed in this planning phase.

@@ -14,6 +14,11 @@ This is the implementation runbook for feature 0.002. All account JSON and SQLit
    git diff --check
    ```
 
+   The localhost Gmail-extension fixture in `tests/gmail_imap_fixture.py` is exercised by
+   `tests/test_gmail_imap_fixture.py`. The existing GitHub Actions application-test step
+   discovers this test automatically with `unittest discover -s tests -v`; it needs no
+   provider account, credentials, container, or network service outside the runner.
+
 4. Run disposable IMAP scenarios with a Gmail-extension fixture. Seed fresh source messages and a destination message with an unrelated label. Verify `CREATE` or reuse, additive `UID STORE`, exact `UID FETCH`, Inbox placement, no source flag change, no delete, and no duplicate after three repeat cycles. Fault the APPEND and STORE acknowledgements separately. Advance the test clock beyond 24 hours and verify repair of an accepted copy, while an uncopied old source message is never APPENDed.
 5. Run the existing disposable copy, outage, and 100-message scenarios to check that baseline and throughput behavior still hold. Record actual commands and results in `.config/ai/progress.ai`.
 
