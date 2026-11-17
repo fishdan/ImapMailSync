@@ -6,6 +6,9 @@ from unittest.mock import patch
 from mailsync.baseline import marker_for
 from mailsync.config import Account
 from mailsync.imap_client import IMAPSession
+from mailsync.imap_client import IMAPError
+from gmail_imap_fixture import GmailIMAPFixture
+import imaplib
 
 
 class FakeIMAP:
@@ -13,6 +16,7 @@ class FakeIMAP:
         self.context = None
         self.commands = []
         self.appended = None
+        self.append_reply = b"APPENDUID 7 17"
 
     def login(self, username, password):
         self.commands.append(("LOGIN", username, password))
@@ -49,7 +53,7 @@ class FakeIMAP:
     def append(self, mailbox, flags, date_time, message):
         self.commands.append(("APPEND", mailbox, flags))
         self.appended = (mailbox, flags, date_time, message)
-        return "OK", [b"APPENDUID 7 17"]
+        return "OK", [self.append_reply]
 
     def logout(self):
         self.commands.append(("LOGOUT",))
@@ -97,6 +101,94 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn(("UID", "SEARCH", (None, "SINCE", "13-Nov-2026", "HEADER",
                                            "X-Mailsync-Key", marker)), self.fake.commands)
         self.assertFalse(any(command[0] in {"STORE", "EXPUNGE"} for command in self.fake.commands))
+
+    def test_matching_appenduid_is_returned_without_another_command(self):
+        destination = Account("alpha", "Test", "dest@test", "password", "imap.example.test", 993)
+        marker = marker_for("yahoo", self.account.identity, 7, 42)
+        with patch("mailsync.imap_client.imaplib.IMAP4_SSL", side_effect=self.factory):
+            with IMAPSession(destination) as session:
+                before = len(self.fake.commands)
+                assigned = session.append_copy(b"From: source@test\r\n\r\nbody", False,
+                                               datetime(2026, 11, 15, 12, tzinfo=timezone.utc), marker)
+        self.assertEqual(assigned, 17)
+        self.assertFalse(any(command[0] == "UID" for command in self.fake.commands[before:]))
+
+    def test_unusable_appenduid_returns_none(self):
+        destination = Account("alpha", "Test", "dest@test", "password", "imap.example.test", 993)
+        marker = marker_for("yahoo", self.account.identity, 7, 42)
+        arrival = datetime(2026, 11, 15, 12, tzinfo=timezone.utc)
+        with patch("mailsync.imap_client.imaplib.IMAP4_SSL", side_effect=self.factory):
+            with IMAPSession(destination) as session:
+                self.fake.append_reply = b"appended"
+                self.assertIsNone(session.append_copy(b"body", False, arrival, marker))
+                self.fake.append_reply = b"APPENDUID 99 17"
+                self.assertIsNone(session.append_copy(b"body", False, arrival, marker))
+
+
+class GmailProtocolTests(unittest.TestCase):
+    def account(self, account_id):
+        return Account(account_id, "Disposable", f"{account_id}@example.test", "synthetic",
+                       "127.0.0.1", 993)
+
+    def connect(self, fixture, account):
+        def factory(*_args, **_kwargs):
+            return imaplib.IMAP4(fixture.host, fixture.port)
+        return patch("mailsync.imap_client.imaplib.IMAP4_SSL", side_effect=factory)
+
+    def test_source_readonly_destination_readwrite_and_capability_gate(self):
+        with GmailIMAPFixture(gmail_extension=False) as fixture:
+            with self.connect(fixture, self.account("source")):
+                with IMAPSession(self.account("source")):
+                    pass
+            self.assertIn("EXAMINE INBOX", fixture.commands)
+            with self.connect(fixture, self.account("alpha")):
+                with IMAPSession(self.account("alpha")) as destination:
+                    with self.assertRaises(IMAPError) as caught:
+                        destination.ensure_label("source/example")
+            self.assertEqual(str(caught.exception), "LABEL_UNSUPPORTED")
+            self.assertIn("SELECT INBOX", fixture.commands)
+            self.assertFalse(any(command.startswith("CREATE") for command in fixture.commands))
+
+    def test_create_reuse_additive_store_and_exact_fetch(self):
+        with GmailIMAPFixture() as fixture:
+            uid = fixture.seed(b"X-Mailsync-Key: ms1-test\r\n\r\nbody", labels={"other"})
+            with self.connect(fixture, self.account("alpha")):
+                with IMAPSession(self.account("alpha")) as destination:
+                    destination.ensure_label('source/"quoted"')
+                    destination.ensure_label('source/"quoted"')
+                    self.assertEqual(destination.labels_for_uid(uid), {"other"})
+                    destination.add_label(uid, 'source/"quoted"')
+                    self.assertEqual(destination.labels_for_uid(uid),
+                                     {"other", 'source/"quoted"'})
+            self.assertEqual(sum(command.startswith("CREATE") for command in fixture.commands), 1)
+            self.assertEqual(fixture.messages[uid].labels, {"other", 'source/"quoted"'})
+            self.assertTrue(any(command.startswith("UID STORE") and "+X-GM-LABELS" in command
+                                for command in fixture.commands))
+
+    def test_exact_marker_lookup_and_uid_verification(self):
+        with GmailIMAPFixture() as fixture:
+            marker = "ms1-" + "a" * 64
+            uid = fixture.seed(b"X-Mailsync-Key: " + marker.encode() + b"\r\n\r\nbody")
+            fixture.seed(b"X-Mailsync-Key: " + marker.encode() + b"-other\r\n\r\nbody")
+            with self.connect(fixture, self.account("alpha")):
+                with IMAPSession(self.account("alpha")) as destination:
+                    self.assertEqual(destination.find_marker_exact(marker), [uid])
+                    self.assertTrue(destination.marker_at_uid(uid, marker))
+                    self.assertFalse(destination.marker_at_uid(uid, "ms1-" + "b" * 64))
+
+    def test_account_wide_absence_requires_all_mail_and_trash_search(self):
+        with GmailIMAPFixture() as fixture:
+            marker = "ms1-" + "c" * 64
+            uid = fixture.seed(b"X-Mailsync-Key: " + marker.encode() + b"\r\n\r\nbody")
+            fixture.mailbox_uids["INBOX"].remove(uid)
+            with self.connect(fixture, self.account("alpha")):
+                with IMAPSession(self.account("alpha")) as destination:
+                    self.assertFalse(destination.copy_absent_account_wide(marker))
+                    fixture.mailbox_uids["[Gmail]/All Mail"].remove(uid)
+                    self.assertTrue(destination.copy_absent_account_wide(marker))
+                    fixture.mailbox_uids.pop("[Gmail]/Spam")
+                    self.assertFalse(destination.copy_absent_account_wide(marker))
+                    self.assertFalse(destination.marker_at_uid(uid, marker))
 
 
 if __name__ == "__main__":

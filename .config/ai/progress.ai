@@ -1,5 +1,87 @@
 # Progress Log
 
+## 2026-11-16 — T018 store APPENDUID without a follow-up search
+
+- A successful alpha append that returns `APPENDUID` for the selected Inbox UIDVALIDITY is now stored as the destination copy id. That write is not checked with a mailbox search or a marker fetch. The label is still confirmed on that stored id. A reply with no usable id, including a UIDVALIDITY that does not match, still uses the existing 24-hour marker search. Lost acknowledgements are unchanged.
+- Validation: `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q` passed 72 tests. No live mailbox was written by this change.
+
+## 2026-11-16 — T017 live label and delivery observation
+
+- The active five-minute timer was enabled. Its 10:10 Eastern cycle succeeded with zero new copies, seven already-copied messages skipped, and zero failures. Private state held seven copy records and six confirmed label jobs. No baseline was reset and no live message was deleted or appended by this check.
+- Read-only Yahoo inspection found all seven copied messages still present, none deleted, and none marked seen. Source UIDVALIDITY matched the stored baseline. Alpha Inbox, selected normally, contained each recorded copy. A fetch of each recorded message found its marker. Each of the six post-feature copies carried the derived source label and no other user label. The one copy made at 9:00 PM Eastern on November 15, before migration 002, had an empty label set.
+- Arrival-to-confirmation time, measured from Yahoo `INTERNALDATE` to the local confirmation time, was 4.58 minutes for the pre-feature copy and 0.59 to 3.68 minutes for the six labeled copies. All seven were inside the ten-minute target. The service journal shows each post-feature cycle copied one message and labeled one, with no pending label, and every later cycle copied zero.
+- Gmail aborted a mailbox-wide `HEADER` search for the marker with `System Error` after about 57 seconds. An `X-GM-RAW` search for the same marker returned no hits, so neither search is evidence of how many copies exist. The no-duplicate result is the repeat-cycle count plus the marker on each recorded copy. Gmail also omitted `\Inbox` from `X-GM-LABELS` for these Inbox messages; Inbox membership was taken from a UID search while Inbox was selected.
+- T017 is complete. The branch remains local, ahead of `origin/feat/0.002-source-address-labels` by the implementation commits, and no pull request is open.
+
+## 2026-11-15 — Source label production rollout, live arrival pending
+
+- Under operator approval, stopped the five-minute user timer and confirmed the service was inactive. Took a fresh private mode-600 SQLite backup through the SQLite backup API. Fast-forwarded the active `feat/0.002-source-address-labels` checkout to validated implementation commit `dae2506` while the timer was stopped.
+- `status --json` applied migration 002 to live private state: schema advanced from 1 to 2; all pre-upgrade source baseline and copy-record rows matched the fresh backup exactly; migration created zero label jobs for legacy copies; integrity check passed. `doctor --json` succeeded for alpha and Yahoo. An immediate controlled `run-once --json` succeeded with zero new copies, zero labels, zero pending jobs, and zero failures.
+- Restarted the enabled timer. Its 23:00 Eastern scheduled service run exited successfully with zero copies and zero failures; `status` showed no pending or missing label jobs, and the next five-minute run was queued. No new post-feature source mail arrived during observation, so no live label write or arrival-to-alpha timing was measured. T017 remains open for a natural future arrival; the timer is active and needs no further activation.
+- Git worktree is clean after the code switch. The branch has not been pushed or submitted as a PR. The 68-test disposable suite, 9 probe tests, packaged migration check, targeted safety tests, and private-value scans remain the pre-rollout validation evidence.
+
+## 2026-11-15 — T017 production preflight, rollout pending
+
+- Confirmed the active five-minute timer still points to the original checkout and was active; `mailsync.service` was inactive at inspection. A certificate-verifying, authenticated read-only capability check confirmed alpha advertises `X-GM-EXT-1`. No label was created or written.
+- Created a private mode-600 SQLite backup with the backup API. An isolated migration rehearsal upgraded a copy from schema 1 to 2, preserved all baseline and copy-record rows, and created zero jobs for legacy copies. The first comparison script reported a false mismatch because it compared SQLite row objects to tuples; converting both sides to tuples confirmed preservation. Production state remains schema 1.
+- Tightened absence proof: a pending copy is not marked missing unless Gmail exposes All Mail, Trash, and Junk/Spam for targeted searches. An unsupported capability now reports any existing pending source UIDs. Targeted cycle and protocol tests passed (26 and 6 tests), as did compilation and whitespace checks. The prior 68-test full suite passed before this narrow safety change; the two affected suites were rerun afterward.
+- Next action requires a coordinated production code switch: pause the active timer, take a fresh private backup, fast-forward the original checkout to the validated implementation, migrate through the application, run doctor/status, resume the timer, and observe natural future mail. No production code switch or label write has occurred.
+
+## 2026-11-15 — T014–T016 disposable and packaging gates
+
+- Added a localhost IMAP end-to-end suite using the real cycle and `imaplib` protocol methods. It verifies labels on two sources, age cutoff, source flag preservation, three zero-copy repeats, one-source outage recovery, lost APPEND/STORE acknowledgements with after-24-hour repair, and a 100-message batch. The batch yielded 100 labeled Inbox copies with zero duplicate copies on repeat; the 68-test application suite completed in 46.84 seconds. No real provider was used.
+- Updated README and feature status with the label rule, Gmail capability, migration, pending repair, reporting, and pre-feature copy boundary. The isolated wheel build contained `002_label_jobs.sql`, and an extracted wheel initialized schema version 2. The 9 imapsync probe tests, Python compilation, and `git diff --check` passed. Git ignore rules cover private account JSON and SQLite state. Private-value scans found zero matches in 95 tracked files and seven staged files.
+- Remaining limit: provider label behavior has only a read-only capability check, not a live label write or natural-arrival observation. T017 production backup, preflight, and rollout observation remain. No new runtime dependency was added; the 2026-11-15 dependency review remains current.
+
+## 2026-11-15 — T012–T013 operational label reporting
+
+- Added failing CLI and multi-source tests, then `doctor` source-address validation and read-only Gmail capability reporting, `run-once` labeled/pending counts with affected source UIDs, and local `status` pending/missing counts. Error codes now match the feature CLI contract. Text and JSON output omit addresses, label values, credentials, IMAP responses, and message content.
+- Validation: 64 application tests passed with `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q`. The active service path has not loaded the isolated worktree implementation. T014 disposable scenario validation is next.
+
+## 2026-11-15 — T009–T011 pending-copy label recovery
+
+- Added test-first recovery for accepted copies with missing labels. Pending jobs run before source access and attempt age expiration. Saved destination UID and exact marker evidence are checked before labeling; a stale UID is reconciled to the verified marker. Accepted copies can be labeled after 24 hours and during a source outage without another APPEND. Lost STORE acknowledgement is resolved by FETCH before retry.
+- A missing Inbox copy remains pending unless exact-marker searches of Gmail All Mail, Trash, and Junk/Spam prove account-wide absence. Temporary lookup failures remain pending; multiple marker matches block that source. An unaccepted old job expires without APPEND. The disposable fixture now models Inbox and All Mail membership for a wire-level absence check.
+- Validation: 61 application tests passed with `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q`. No live provider or state was touched. T012 reporting and multi-source tests are next.
+
+## 2026-11-15 — T007–T008 labeled new copies
+
+- Added failing cycle tests, then connected source-address validation, destination label preparation, atomic job creation before APPEND, existing marker reconciliation, exact destination UID label confirmation, and pending-label reporting. Prior feature-0.001 copy records are left without jobs. Invalid source address or missing Gmail capability blocks new APPEND for that source; healthy sources continue.
+- Validation: 52 application tests passed with `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q`. Tests cover one labeled copy, label reuse without disturbing another label, legacy-copy exclusion, invalid-address isolation, capability gate, label failure visibility, and the existing 24-hour source cutoff. Production timer still points to the original checkout; no live label operation occurred.
+
+## 2026-11-15 — T005–T006 Gmail label protocol
+
+- Added failing wire-level tests against the disposable `imaplib` fixture, then implemented read-write destination selection, a `X-GM-EXT-1` capability gate, exact label LIST/CREATE/reuse, additive `UID STORE +X-GM-LABELS`, exact UID label FETCH and parsing, and targeted marker search/UID header verification. Source selection stays read only. The fixture now serves header-only UID FETCH for marker verification.
+- Validation: `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q` passed 47 tests; compilation and `git diff --check` passed. Tests confirm existing labels survive and no duplicate CREATE occurs. No live mailbox was accessed from the isolated worktree; the existing monthly dependency review remains current.
+
+## 2026-11-15 — T002–T004 source label and durable job foundation
+
+- Built this phase in isolated worktree `feat/0.002-source-address-labels-impl` because the active five-minute service executes code from the original checkout. No migration has been applied to live state.
+- Added test-first source-label derivation and ASCII IMAP quoted-string encoding. Invalid address shapes, controls, and non-ASCII values fail with sanitized codes. The final domain suffix rule preserves configured case and allows intentional shared labels.
+- Added packaged migration 002 with an initially empty `label_jobs` table, an atomic attempt-plus-job creation method before APPEND, pending job queries, immutable marker/label identity, UID evidence recorded in the same transaction as copy confirmation, and guarded terminal transitions. Pending jobs are excluded from generic attempt expiration.
+- Validation: the new label tests initially failed because `mailsync.labels` did not exist. After implementation, `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q` passed 44 tests; compilation and `git diff --check` passed. No production dependency was added; the 2026-11-15 dependency review remains current. T005 protocol tests are next.
+
+## 2026-11-15 — T001 disposable Gmail-extension IMAP fixture
+
+- Added a localhost-only, synthetic IMAP fixture with `X-GM-EXT-1` capability, LIST/CREATE, Inbox APPEND and UID marker search, exact UID label FETCH, and additive UID STORE. It supports one-shot command rejection, connection loss, and lost acknowledgements after accepted APPEND or STORE. No real provider or account was touched.
+- Added wire-level `imaplib` tests for label creation/reuse, exact UID label read and write, marker lookup, read-only rejection, capability absence, and fault behavior. The existing CI application-test discovery runs these tests without a service dependency; the feature quickstart records this.
+- Validation: `PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py' -q` passed 35 tests; `python3 -m compileall -q src tests` and `git diff --check` passed. T001 is complete; T002 label derivation and encoding tests are next. The 2026-11-15 monthly dependency review remains current, and no dependency was added.
+
+## 2026-11-15 — Source address labels plan and tasks
+
+- Completed the planning phase for feature `0.002-source-address-labels` on `feat/0.002-source-address-labels`. Added `plan.md`, `research.md`, `data-model.md`, `contracts/cli.md`, `quickstart.md`, and `tasks.md` with 17 ordered tasks. The spec now records `Planned; implementation pending`.
+- Chose Gmail's existing IMAP `X-GM-EXT-1` path: label discovery/creation through LIST/CREATE, additive `UID STORE +X-GM-LABELS`, and exact-UID FETCH confirmation. The plan gates new APPENDs on label capability and address validation. It does not add a production dependency or change live mail.
+- Designed migration 002 as an empty-on-upgrade label-job table, leaving pre-feature copies and existing UIDNEXT baselines untouched. New jobs are committed before post-feature APPEND. A pending accepted copy can be repaired after 24 hours by saved destination UID or exact marker; an old source message with no accepted copy is never APPENDed. The test plan covers lost APPEND/STORE acknowledgements, source outage, deleted copy, multiple marker matches, 100-message throughput, multi-source isolation, and sanitized reports.
+- Validation for this documentation phase: `git diff --check` passed; SpecKit version 1.4.1.dev0 and feature branch confirmed; private account JSON and SQLite state remain Git-ignored. No application tests or production label writes were run because implementation has not started. The monthly dependency review from 2026-11-15 remains current.
+
+## 2026-11-15 — Source address labels specification
+
+- The operator approved retrying a missing label on the specific copy already accepted in alpha even after 24 hours. Updated FR-010 from a proposed exception to a requirement: target that recorded copy until labeled or inaccessible, never broaden historical scans or reimport old source mail. The source-copy cutoff remains 24 hours on every run. Updated the interrupted-copy acceptance test, edge cases, success criterion, and checklist; the spec is ready for planning. No application code or live mailbox state changed.
+- Started feature `0.002-source-address-labels` on branch `feat/0.002-source-address-labels` from merged `main`. Added a draft specification and quality checklist for labeling future source copies in alpha's Inbox. The requested mapping is defined as removing the final dot suffix from the configured source email address: `person@yahoo.com` becomes `person@yahoo`. The address is taken from source configuration, not a message header. The public spec uses a generic example because the operator's example matches a private account username.
+- The draft preserves the existing UIDNEXT baseline, rolling 24-hour source eligibility, Inbox placement, one-way copying, and no-deletion rules. It specifies label reuse or creation, per-message confirmation, recovery after an interrupted copy or label step without duplicate APPEND, source isolation, and sanitized failure reporting. Historical alpha mail is outside scope. No application code, live mailbox labels, or runtime state was changed.
+- Google's official Gmail IMAP extensions documentation confirms that Gmail exposes labels through IMAP and supports adding a label to an existing message. A read-only capability check of alpha returned `X-GM-EXT-1`, the extension named by that documentation. The protocol choice and disposable fault tests are left for the later plan. At drafting, the targeted-repair policy was open; the operator resolved it as recorded above.
+- Validation for this specification turn: template sections and acceptance criteria reviewed; `git diff --cached --check` passed; all four staged files were scanned with zero private paths or credential-value matches. Only a read-only IMAP capability command touched alpha. The current monthly dependency review remains valid; this documentation-only branch adds no dependency.
+
 ## 2026-11-15 — PR readiness review and README update
 
 - Added T033 for a PR-readiness review and moved the proposed changes from `main` onto `feat/imap-mail-sync`. Updated `README.md` with fresh-clone private account setup, the one-time activation boundary, the correct `PYTHONPATH=src` test command, timer status, and the remaining live-delivery observation. Updated the quickstart test command for the same source layout.

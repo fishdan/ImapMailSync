@@ -1,4 +1,4 @@
-"""Versioned SQLite state for baselines, attempts, copies, and cycle results."""
+"""Versioned SQLite state for baselines, attempts, copies, labels, and cycles."""
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -138,6 +138,102 @@ class Store:
         except sqlite3.IntegrityError as exc:
             raise StateError("MARKER_COLLISION") from exc
 
+    def label_job(self, account_id: str, uidvalidity: int, source_uid: int) -> dict | None:
+        row = self.db.execute(
+            "SELECT * FROM label_jobs WHERE account_id=? AND uidvalidity=? AND source_uid=?",
+            (account_id, uidvalidity, source_uid),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def pending_label_jobs(self, account_id: str | None = None) -> list[dict]:
+        query = "SELECT * FROM label_jobs WHERE status='pending'"
+        args = ()
+        if account_id is not None:
+            query += " AND account_id=?"
+            args = (account_id,)
+        return [dict(row) for row in self.db.execute(
+            query + " ORDER BY account_id, created_at, source_uid", args)]
+
+    def label_counts(self, account_id: str) -> dict[str, int]:
+        counts = {"pending_labels": 0, "missing_labels": 0}
+        for row in self.db.execute(
+                "SELECT status, COUNT(*) FROM label_jobs WHERE account_id=? "
+                "AND status IN ('pending','missing') GROUP BY status", (account_id,)):
+            counts[f"{row[0]}_labels"] = int(row[1])
+        return counts
+
+    def begin_label_job(self, account_id: str, uidvalidity: int, source_uid: int,
+                        marker: str, label_name: str) -> None:
+        """Commit attempt and immutable job together, before any destination APPEND."""
+        if not marker or not label_name:
+            raise StateError("INVALID_LABEL_JOB")
+        existing = self.label_job(account_id, uidvalidity, source_uid)
+        if existing:
+            if (existing["marker"], existing["label_name"]) != (marker, label_name):
+                raise StateError("LABEL_JOB_IDENTITY_CHANGED")
+            if existing["status"] != "pending":
+                raise StateError("LABEL_JOB_TERMINAL")
+            return
+        if self.copy_record(account_id, uidvalidity, source_uid):
+            raise StateError("COPY_ALREADY_CONFIRMED")
+        previous = self.attempt(account_id, uidvalidity, source_uid)
+        if previous and (previous["marker"] != marker or previous["status"] == "confirmed"):
+            raise StateError("ATTEMPT_MARKER_CHANGED")
+        now = utc_now()
+        try:
+            with self.db:
+                if previous is None:
+                    self.db.execute(
+                        "INSERT INTO transfer_attempts(account_id,uidvalidity,source_uid,marker,status,started_at) "
+                        "VALUES (?,?,?,?, 'running', ?)",
+                        (account_id, uidvalidity, source_uid, marker, now),
+                    )
+                self.db.execute(
+                    "INSERT INTO label_jobs(account_id,uidvalidity,source_uid,marker,label_name,status,created_at,updated_at) "
+                    "VALUES (?,?,?,?,?,'pending',?,?)",
+                    (account_id, uidvalidity, source_uid, marker, label_name, now, now),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise StateError("LABEL_JOB_COLLISION") from exc
+
+    def set_label_status(self, account_id: str, uidvalidity: int, source_uid: int,
+                         status: str, error_code: str | None = None) -> None:
+        job = self.label_job(account_id, uidvalidity, source_uid)
+        if not job or job["status"] != "pending" or status not in {
+            "pending", "confirmed", "missing", "expired"
+        }:
+            raise StateError("INVALID_LABEL_TRANSITION")
+        has_copy = job["destination_uid"] is not None
+        if (status in {"confirmed", "missing"} and not has_copy) or (status == "expired" and has_copy):
+            raise StateError("INVALID_LABEL_TRANSITION")
+        with self.db:
+            self.db.execute(
+                "UPDATE label_jobs SET status=?,updated_at=?,error_code=? "
+                "WHERE account_id=? AND uidvalidity=? AND source_uid=?",
+                (status, utc_now(), error_code, account_id, uidvalidity, source_uid),
+            )
+
+    def reconcile_destination_uid(self, account_id: str, uidvalidity: int, source_uid: int,
+                                  marker: str, destination_uidvalidity: int,
+                                  destination_uid: int) -> None:
+        """Update stale UID evidence only after the caller verifies the exact marker."""
+        job = self.label_job(account_id, uidvalidity, source_uid)
+        copy = self.copy_record(account_id, uidvalidity, source_uid)
+        if (not job or not copy or job["status"] != "pending" or job["marker"] != marker
+                or copy["marker"] != marker or destination_uidvalidity < 1 or destination_uid < 1):
+            raise StateError("COPY_EVIDENCE_CHANGED")
+        with self.db:
+            self.db.execute(
+                "UPDATE copy_records SET destination_uidvalidity=?,destination_uid=? "
+                "WHERE account_id=? AND uidvalidity=? AND source_uid=?",
+                (destination_uidvalidity, destination_uid, account_id, uidvalidity, source_uid),
+            )
+            self.db.execute(
+                "UPDATE label_jobs SET destination_uidvalidity=?,destination_uid=?,updated_at=? "
+                "WHERE account_id=? AND uidvalidity=? AND source_uid=?",
+                (destination_uidvalidity, destination_uid, utc_now(), account_id, uidvalidity, source_uid),
+            )
+
     def mark_uncertain(self, account_id: str, uidvalidity: int, source_uid: int, error_code: str) -> None:
         with self.db:
             self.db.execute(
@@ -160,12 +256,18 @@ class Store:
         with self.db:
             rows = self.db.execute(
                 "SELECT source_uid FROM transfer_attempts WHERE account_id=? AND uidvalidity=? "
-                "AND status IN ('running','uncertain') AND started_at<?",
+                "AND status IN ('running','uncertain') AND started_at<? "
+                "AND NOT EXISTS (SELECT 1 FROM label_jobs j WHERE j.account_id=transfer_attempts.account_id "
+                "AND j.uidvalidity=transfer_attempts.uidvalidity AND j.source_uid=transfer_attempts.source_uid "
+                "AND j.status='pending')",
                 (account_id, uidvalidity, cutoff_text),
             ).fetchall()
             self.db.execute(
                 "UPDATE transfer_attempts SET status='failed',ended_at=?,error_code='AGE_WINDOW_EXPIRED' "
-                "WHERE account_id=? AND uidvalidity=? AND status IN ('running','uncertain') AND started_at<?",
+                "WHERE account_id=? AND uidvalidity=? AND status IN ('running','uncertain') AND started_at<? "
+                "AND NOT EXISTS (SELECT 1 FROM label_jobs j WHERE j.account_id=transfer_attempts.account_id "
+                "AND j.uidvalidity=transfer_attempts.uidvalidity AND j.source_uid=transfer_attempts.source_uid "
+                "AND j.status='pending')",
                 (utc_now(), account_id, uidvalidity, cutoff_text),
             )
         return {int(row[0]) for row in rows}
@@ -188,6 +290,15 @@ class Store:
                 marker, destination_uidvalidity, destination_uid
             ):
                 raise StateError("COPY_EVIDENCE_CHANGED")
+            job = self.label_job(account_id, uidvalidity, source_uid)
+            if job and job["destination_uid"] is None:
+                with self.db:
+                    self.db.execute(
+                        "UPDATE label_jobs SET destination_uidvalidity=?,destination_uid=?,updated_at=? "
+                        "WHERE account_id=? AND uidvalidity=? AND source_uid=?",
+                        (destination_uidvalidity, destination_uid, utc_now(),
+                         account_id, uidvalidity, source_uid),
+                    )
             return
         attempt = self.attempt(account_id, uidvalidity, source_uid)
         if not attempt or attempt["marker"] != marker:
@@ -203,6 +314,12 @@ class Store:
                     "UPDATE transfer_attempts SET status='confirmed',ended_at=?,error_code=NULL "
                     "WHERE account_id=? AND uidvalidity=? AND source_uid=?",
                     (utc_now(), account_id, uidvalidity, source_uid),
+                )
+                self.db.execute(
+                    "UPDATE label_jobs SET destination_uidvalidity=?,destination_uid=?,updated_at=? "
+                    "WHERE account_id=? AND uidvalidity=? AND source_uid=?",
+                    (destination_uidvalidity, destination_uid, utc_now(),
+                     account_id, uidvalidity, source_uid),
                 )
         except sqlite3.IntegrityError as exc:
             raise StateError("COPY_COLLISION") from exc

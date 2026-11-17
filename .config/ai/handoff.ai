@@ -1,5 +1,82 @@
 # Handoff
 
+## 2026-11-16 — APPENDUID confirmation ready for review
+
+- Branch: `feat/0.002-source-address-labels`. T018 stores a matching `APPENDUID` and skips the follow-up marker search for that write. The 24-hour search remains when the reply has no usable id. Label confirmation on the stored UID is unchanged. 72 application tests passed.
+- T001–T017 are complete, including the 2026-11-16 live label and ten-minute delivery observation. The five-minute timer stays active. Next action: push this branch and open the pull request. Do not reset the baseline or delete live mail.
+
+## 2026-11-16 — T017 complete; branch ready to push
+
+- Branch: `feat/0.002-source-address-labels` in `/home/dfish/IdeaProjects/ImapMailSync`. T001–T017 are complete. The five-minute `mailsync.timer` is enabled and active. The isolated `ImapMailSync-label-dev` worktree and its local implementation branch have been removed; their commits are contained in this branch.
+- Live observation on 2026-11-16: six natural post-feature Yahoo messages were copied once into alpha Inbox with the derived label confirmed by fetch. Arrival-to-confirmation was under ten minutes for each. Later cycles, including 10:10 Eastern, copied zero. Source messages remained present, unread, and not deleted. The pre-feature copy did not receive a label. Gmail aborts a mailbox-wide marker search, so that search was not used as duplicate evidence.
+- The branch is ahead of `origin/feat/0.002-source-address-labels` and has no open pull request. Next action: push this branch and open the pull request. Do not reset the baseline or delete live mail.
+
+## 2026-11-15 — Source labels deployed; natural-arrival acceptance outstanding
+
+- Branch: `feat/0.002-source-address-labels` in the active checkout `/home/dfish/IdeaProjects/ImapMailSync`, fast-forwarded to `dae2506` before this documentation commit. The five-minute `mailsync.timer` is enabled and active. A fresh private pre-rollout SQLite backup exists with mode 600.
+- Migration 002 applied to live private state through `status`: schema version 2, baseline and copy rows preserved exactly, zero legacy label jobs, integrity check passed. `doctor` passed for alpha and Yahoo. A controlled manual cycle and the 23:00 Eastern scheduled cycle both succeeded with zero copies, zero failures, and no pending labels. No live label write occurred because no post-feature source mail arrived.
+- T017 remains unchecked solely for observation of a naturally arriving future source message: confirm one alpha Inbox copy with its derived label, no duplicate on repeat, source unchanged, and arrival-to-alpha time within ten minutes. Inspect `PYTHONPATH=src python3 -m mailsync status --json` and `journalctl --user -u mailsync.service` after an arrival. Do not reset the baseline, create historical test mail, or delete live mail to force acceptance.
+- Validation before rollout: 68 application tests, 9 probe tests, compilation, wheel migration 002, targeted protocol/cycle tests, whitespace and private-value scans. This active branch is local ahead of origin; no PR has been opened.
+
+## 2026-11-15 — Production preflight done; T017 rollout pending
+
+- Implementation branch: `feat/0.002-source-address-labels-impl` in `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. Active service checkout: `/home/dfish/IdeaProjects/ImapMailSync` on `feat/0.002-source-address-labels`, still running feature 0.001. The timer was active and the service inactive at inspection; no production code or schema switch has occurred.
+- A private SQLite backup exists with mode 600. An isolated copy migrated from schema 1 to 2 with every baseline and copy row preserved and no legacy label jobs. Alpha advertised `X-GM-EXT-1` in an authenticated, read-only check. After a safety refinement, 26 cycle tests, 6 IMAP protocol tests, compilation, and whitespace checks passed; the earlier 68-test full suite and packaged-wheel gate passed.
+- T017 remains unchecked. With explicit live-rollout authorization, stop the timer, take a fresh backup, fast-forward the active checkout to this implementation branch, trigger migration through `status`, run `doctor`, resume the timer, and observe a naturally arriving new message. Do not claim live label or ten-minute delivery evidence until observed.
+
+## 2026-11-15 — Feature ready for coordinated production rollout
+
+- Branch: `feat/0.002-source-address-labels-impl` in `/home/dfish/IdeaProjects/ImapMailSync-label-dev`; original checkout at `/home/dfish/IdeaProjects/ImapMailSync` remains the active feature-0.001 service path. T001–T016 are complete. The final staged private-value scan passed. Do not copy code into the active checkout while its timer can start a cycle.
+- Validation: 68 application tests (46.84 seconds), 9 imapsync probe tests, compilation, wheel with migration 002 and extracted version-2 initialization, whitespace check, and Git-ignore check passed. Disposable integration includes 100 labeled messages, three repeat cycles, source outage, and lost acknowledgement faults. No real label write or live state migration occurred.
+- Next: T017. Back up active ignored state, check timer, rehearse migration against the backup, and run read-only alpha capability preflight. Coordinate the final code switch with the timer paused, then observe natural future mail. Record live evidence separately from disposable evidence.
+
+## 2026-11-15 — Label feature implementation ready for disposable validation
+
+- Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T013 are complete. `doctor`, `run-once`, and `status` include sanitized label checks and counts; the original checkout still runs feature 0.001 under the active timer.
+- 64 application tests passed. Next: T014 disposable end-to-end/fault/100-message gates, T015 documentation, T016 packaging/security checks, then T017 coordinated production state backup and rollout observation. No live label operation or migration has occurred.
+
+## 2026-11-15 — Pending-copy repair in isolated worktree
+
+- Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T011 are complete. The original checkout continues to serve the active production timer with feature 0.001 code.
+- Recovery tests cover accepted copy and STORE acknowledgement interruption, after-24-hour repair with source outage, old unaccepted job expiration, stale UID, account-wide missing proof, Inbox-only pending, and multiple marker matches. 61 application tests passed. No live provider or state changed.
+- Next: T012–T013 operational reporting and doctor checks, then full disposable and packaging gates before any production rollout.
+
+## 2026-11-15 — New-copy labeling path in isolated worktree
+
+- Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T008 are complete. The original checkout remains the production service path and has not loaded migration 002.
+- New copies are labeled and confirmed in disposable cycle tests; pending-label repair after age-out and source outage is next (T009–T011). 52 application tests passed. No live provider or state changed.
+
+## 2026-11-15 — Gmail protocol operations in isolated worktree
+
+- Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T006 are complete. The active production checkout remains unchanged beyond the T001 test fixture commit and still runs feature 0.001.
+- 47 application tests, compilation, and `git diff --check` passed. No live account or state was touched. Next: T007 failing copy-cycle tests, then T008 cycle integration; retain isolated development until all disposable and migration gates pass.
+
+## 2026-11-15 — Label/state foundation in isolated worktree
+
+- Branch: `feat/0.002-source-address-labels-impl` at `/home/dfish/IdeaProjects/ImapMailSync-label-dev`. T001–T004 are complete. The original checkout remains on `feat/0.002-source-address-labels` and is the path used by the active systemd timer; do not copy half-finished migration/code there.
+- Added `labels.py`, migration 002, label job state methods, and tests. The version-1 upgrade test confirms legacy baselines/copy records survive and receive no job. 44 application tests, compilation, and `git diff --check` passed. No live state or label was touched.
+- Next task: T005 failing IMAP protocol tests, then T006 protocol implementation. Keep all production code changes in the isolated worktree until disposable gates and a coordinated timer-safe rollout.
+
+## 2026-11-15 — T001 protocol fixture complete
+
+- Branch: `feat/0.002-source-address-labels`. T001 is complete with `tests/gmail_imap_fixture.py` and `tests/test_gmail_imap_fixture.py`; it uses only synthetic mail and localhost `imaplib` connections. The feature remains unimplemented in production code, and no live labels or state changed.
+- Validation: 35 application tests passed, Python compilation passed, and `git diff --check` passed. No new dependency was added. The fixture is part of existing CI test discovery.
+- Next task: T002 failing label derivation and safe IMAP encoding tests, followed by T003 migration/job transition tests and T004 implementation. The five-minute production timer remains in its feature-0.001 state.
+
+## 2026-11-15 — Source address labels planned
+
+- Branch: `feat/0.002-source-address-labels`. Feature spec and checklist are complete; plan, research, data model, CLI contract, quickstart, and 17 implementation tasks are present under `specs/0/0.002-source-address-labels/`. No production code, private account configuration, SQLite state, or live labels changed in this planning phase.
+- Current task: begin T001, the disposable Gmail-extension IMAP fixture, then follow the test-first T002–T017 order. Key design is a migration-002 label job created before each post-feature APPEND. Pending accepted copies are repaired by saved UID or exact marker after 24 hours, while the source-copy cutoff remains strict on every run.
+- Validation: documentation whitespace check and private-path Git-ignore check passed. Application tests were not run for documentation-only changes; no provider write was attempted. The five-minute production timer remains in its prior feature-0.001 state.
+- Next action: implement T001–T004, then Gmail protocol and cycle work behind disposable tests. Complete all fault and migration gates before allowing new code to write a label in alpha.
+
+## 2026-11-15 — Source address label specification in progress
+
+- Branch: `feat/0.002-source-address-labels`, created from merged `main`. Active feature: `specs/0/0.002-source-address-labels/spec.md`, ready for planning. No implementation, production label operation, or existing sync change was made.
+- The draft maps a configured source address such as `person@yahoo.com` to the alpha Gmail label `person@yahoo`, preserving Inbox placement and source mail. It covers new copies only, label reuse/creation, interruption recovery, idempotence, and reporting. The public spec uses a generic example because the operator's example matches a private username.
+- Operator decision resolved: retry the label on a specific already accepted alpha copy after 24 hours until labeled or inaccessible, without scanning unrelated older mail or extending the 24-hour source-copy cutoff. The checklist marks this confirmed.
+- Next action: create the feature plan and implementation tasks, including disposable Gmail-compatible label and interruption tests. No plan or tasks for feature 0.002 have been created yet.
+
 ## 2026-11-15 — Yahoo production sync active
 
 - Branch: `feat/imap-mail-sync` (created from `main` for PR preparation). Active feature: `0.001-imap-mail-sync`. Tasks T001–T033 are complete. The imapsync adoption gate is no-go; the production engine is direct Python IMAP.
